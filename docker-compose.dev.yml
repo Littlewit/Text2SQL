@@ -1,0 +1,60 @@
+# 开发环境编排（DEP-01、ENV-02）
+# 用法：docker compose -f docker-compose.dev.yml up -d
+# postgres 使用 pgvector 官方镜像，与生产同构（DR-07、ENV-03）
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: t2s-postgres-dev
+    environment:
+      POSTGRES_USER: t2s
+      POSTGRES_PASSWORD: t2s
+      POSTGRES_DB: text2sql_meta
+      TZ: Asia/Shanghai
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U t2s -d text2sql_meta"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: t2s-redis-dev
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # 后端 API：代码目录挂载实现热重载（DEP-08）
+  api:
+    build: ./backend
+    container_name: t2s-api-dev
+    environment:
+      DEBUG: "true"
+      METADATA_DB_URL: postgresql+psycopg://t2s:t2s@postgres:5432/text2sql_meta
+      REDIS_URL: redis://redis:6379/0
+      TZ: Asia/Shanghai
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/api/v1/healthz')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata_dev:

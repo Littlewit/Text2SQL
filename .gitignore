@@ -13,6 +13,11 @@ env/
 .idea/
 .vscode/
 
+# 前端
+node_modules/
+dist/
+*.local
+
 # 环境与日志
 .env
 *.log
