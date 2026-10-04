@@ -17,6 +17,7 @@ env/
 node_modules/
 dist/
 *.local
+*.tsbuildinfo
 
 # 环境与日志
 .env
