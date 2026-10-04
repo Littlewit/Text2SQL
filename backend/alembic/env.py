@@ -24,8 +24,10 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# 将应用配置中的数据库 URL 注入 alembic
-config.set_main_option("sqlalchemy.url", get_settings().metadata_db_url)
+# 将应用配置中的数据库 URL 注入 alembic；
+# 若调用方（如测试）已显式配置 URL，则不覆盖，保证注入优先
+if not config.get_main_option("sqlalchemy.url"):
+    config.set_main_option("sqlalchemy.url", get_settings().metadata_db_url)
 
 target_metadata = None  # T1 引入 ORM models 后改为 Base.metadata
 

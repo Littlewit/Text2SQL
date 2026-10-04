@@ -22,7 +22,11 @@ TEST_DB = "text2sql_test"
 
 @pytest.fixture(scope="session")
 def test_db_url():
-    """在 dev 实例上重建 text2sql_test 库，返回其 SQLAlchemy 连接串。"""
+    """在 dev 实例上重建 text2sql_test 库，返回其 SQLAlchemy 连接串。
+
+    必须在迁移执行前注入环境变量：alembic env.py 通过 app 配置读取 URL，
+    若仍保留单测默认值（不可达端口），Windows 上拒绝连接的重试会拖满数百秒。
+    """
     import psycopg
 
     conninfo = f"host={TEST_HOST} port={TEST_PORT} dbname=text2sql_meta user={TEST_USER} password={TEST_PASSWORD}"
@@ -35,14 +39,18 @@ def test_db_url():
         conn.execute(f'DROP DATABASE IF EXISTS {TEST_DB}')
         conn.execute(f'CREATE DATABASE {TEST_DB}')
 
-    return f"postgresql+psycopg://{TEST_USER}:{TEST_PASSWORD}@{TEST_HOST}:{TEST_PORT}/{TEST_DB}"
+    url = f"postgresql+psycopg://{TEST_USER}:{TEST_PASSWORD}@{TEST_HOST}:{TEST_PORT}/{TEST_DB}"
+    os.environ["METADATA_DB_URL"] = url
+    os.environ["SECRET_KEY"] = "test-secret"
+    return url
 
 
 @pytest.fixture(scope="session")
 def migrated(test_db_url):
     """对测试库执行全部迁移（会话级一次）。"""
-    from alembic import command
     from alembic.config import Config
+
+    from alembic import command
 
     cfg = Config("alembic.ini")
     cfg.set_main_option("sqlalchemy.url", test_db_url)
@@ -58,7 +66,6 @@ def client(migrated):
 
     from app.core.config import get_settings
     from app.infra.db import reset_engine
-    from app.main import create_app
 
     get_settings.cache_clear()
     reset_engine()

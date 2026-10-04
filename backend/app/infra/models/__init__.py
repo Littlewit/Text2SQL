@@ -7,6 +7,32 @@ from app.infra.models.audit import AuditLog
 from app.infra.models.base import Base
 from app.infra.models.config import SysConfig
 from app.infra.models.datasource import Datasource
+from app.infra.models.schema_meta import (
+    ColumnMeta,
+    EnumDict,
+    JoinPath,
+    MetaRevision,
+    Metric,
+    SchemaEmbedding,
+    Synonym,
+    TableMeta,
+)
 from app.infra.models.user import DataScope, Role, User
 
-__all__ = ["AuditLog", "Base", "DataScope", "Datasource", "Role", "SysConfig", "User"]
+__all__ = [
+    "AuditLog",
+    "Base",
+    "ColumnMeta",
+    "DataScope",
+    "Datasource",
+    "EnumDict",
+    "JoinPath",
+    "MetaRevision",
+    "Metric",
+    "Role",
+    "SchemaEmbedding",
+    "Synonym",
+    "SysConfig",
+    "TableMeta",
+    "User",
+]
