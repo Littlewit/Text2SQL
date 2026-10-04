@@ -11,6 +11,24 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    # ENV-03：集成测试使用真实 PostgreSQL+pgvector 服务容器，禁止内存数据库替代
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: t2s
+          POSTGRES_PASSWORD: t2s
+          POSTGRES_DB: text2sql_meta
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U t2s -d text2sql_meta"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      ITEST_DB_HOST: localhost
+      ITEST_DB_PORT: "5433"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -25,8 +43,9 @@ jobs:
       - name: Lint (ruff)
         run: ruff check .
       - name: Unit tests
-        # 单测不依赖数据库；集成测试（testcontainers）在 T5 评测/安全阶段接入
-        run: pytest -m "not integration" -v
+        run: pytest -m "not integration" -q
+      - name: Integration tests
+        run: pytest -m integration -q
 
   frontend:
     runs-on: ubuntu-latest
