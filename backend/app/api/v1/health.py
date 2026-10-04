@@ -4,11 +4,15 @@
 - /readyz：就绪探针，检查元数据库连通性，不可用返回 503（编排系统据此摘流量）。
 """
 
+import logging
+
 from fastapi import APIRouter, Response
 from sqlalchemy import text
 
 from app.core.config import get_settings
 from app.infra.db import engine
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 settings = get_settings()
@@ -28,5 +32,7 @@ async def readyz(response: Response) -> dict:
             await conn.execute(text("SELECT 1"))
         return {"status": "ok", "database": "up"}
     except Exception:  # noqa: BLE001 —— 探针必须吞掉异常细节，避免泄露内部结构（§9.1 最小暴露）
+        # 技术细节只写日志（NFR-O-02），不进响应体
+        logger.exception("readyz database check failed")
         response.status_code = 503
         return {"status": "degraded", "database": "down"}

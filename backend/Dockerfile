@@ -15,5 +15,5 @@ COPY . .
 
 EXPOSE 8000
 
-# 开发模式默认热重载；生产由 compose 覆盖 command 并关闭 --reload（DEP-08）
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# 使用 run.py 启动：跨平台处理事件循环兼容性（见 run.py 说明）
+CMD ["python", "run.py"]

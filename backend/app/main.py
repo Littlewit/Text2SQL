@@ -1,5 +1,12 @@
 """FastAPI 应用工厂（§2.3）。"""
 
+import asyncio
+import sys
+
+# Windows 默认 ProactorEventLoop 与 psycopg 异步模式不兼容（生产 Linux 容器不受影响）
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 from fastapi import FastAPI
 
 from app.api.v1 import api_router

@@ -5,13 +5,18 @@ URL 统一取自应用配置，保证迁移与运行时连接同一数据库（E
 """
 
 import asyncio
+import sys
 from logging.config import fileConfig
 
-from alembic import context
+# Windows 默认的 ProactorEventLoop 与 psycopg 异步模式不兼容，需切换 Selector 事件循环
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from alembic import context
 from app.core.config import get_settings
 
 config = context.config

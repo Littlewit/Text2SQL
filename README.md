@@ -41,7 +41,7 @@ python -m venv .venv
 .venv\Scripts\activate
 pip install -e ".[dev]"
 copy .env.example .env   # 按需修改
-uvicorn app.main:app --reload
+python run.py            # 统一入口（处理 Windows 事件循环兼容性）
 ```
 
 ## 测试

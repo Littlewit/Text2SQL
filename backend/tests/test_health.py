@@ -1,6 +1,5 @@
 """健康探针接口测试。"""
 
-import httpx
 from fastapi.testclient import TestClient
 
 from app.main import create_app

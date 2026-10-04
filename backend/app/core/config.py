@@ -24,7 +24,8 @@ class Settings(BaseSettings):
     api_prefix: str = "/api/v1"
 
     # --- 元数据库（PostgreSQL + pgvector，全环境统一，DR-07）---
-    metadata_db_url: str = "postgresql+psycopg://t2s:t2s@localhost:5432/text2sql_meta"
+    # 默认端口 5433：docker-compose.dev.yml 将容器映射到宿主机 5433，避开本机原生 PG 占用的 5432
+    metadata_db_url: str = "postgresql+psycopg://t2s:t2s@localhost:5433/text2sql_meta"
     db_echo: bool = False
     db_pool_size: int = 10
 
