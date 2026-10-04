@@ -10,7 +10,7 @@ from fastapi import APIRouter, Response
 from sqlalchemy import text
 
 from app.core.config import get_settings
-from app.infra.db import engine
+from app.infra.db import get_engine
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ async def healthz() -> dict:
 async def readyz(response: Response) -> dict:
     """就绪探针：依赖元数据库可达。失败时返回 503 而非 500，便于编排区分"未就绪"与"故障"。"""
     try:
-        async with engine.connect() as conn:
+        async with get_engine().connect() as conn:
             await conn.execute(text("SELECT 1"))
         return {"status": "ok", "database": "up"}
     except Exception:  # noqa: BLE001 —— 探针必须吞掉异常细节，避免泄露内部结构（§9.1 最小暴露）

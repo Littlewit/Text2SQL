@@ -11,6 +11,7 @@ from fastapi import FastAPI
 
 from app.api.v1 import api_router
 from app.core.config import get_settings
+from app.core.errors import AppError, app_error_handler
 from app.core.tracing import TraceIdMiddleware
 
 settings = get_settings()
@@ -25,6 +26,8 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(TraceIdMiddleware)
     app.include_router(api_router, prefix=settings.api_prefix)
+    # 业务异常统一转响应包络（§6.4），堆栈不进响应体
+    app.add_exception_handler(AppError, app_error_handler)
     return app
 
 

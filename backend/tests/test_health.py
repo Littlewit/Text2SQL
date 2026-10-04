@@ -25,9 +25,32 @@ def test_trace_id_injected():
     assert resp2.headers["X-Request-ID"] == "abc123"
 
 
-def test_readyz_down_returns_503():
-    """数据库不可达时，就绪探针应返回 503 而非抛 500（§9.1 最小暴露）。"""
-    # conftest 注入的测试 URL 不可达，readyz 应优雅降级
+def test_readyz_down_returns_503(monkeypatch):
+    """数据库不可达时，就绪探针应返回 503 而非抛 500（§9.1 最小暴露）。
+
+    用桩模拟连接失败而非真实连接不可达地址：Windows 对关闭端口的 TCP 超时可达分钟级，
+    会拖慢单元测试；连接失败行为已在集成测试中用真实容器覆盖。
+    """
+    import sqlalchemy.exc
+
+    class _BrokenConn:
+        def __init__(self, exc):
+            self._exc = exc
+
+        async def __aenter__(self):
+            raise self._exc
+
+        async def __aexit__(self, *args):
+            return False
+
+    def _broken_engine():
+        class _E:
+            def connect(self):
+                return _BrokenConn(sqlalchemy.exc.OperationalError("down", {}, None))
+
+        return _E()
+
+    monkeypatch.setattr("app.api.v1.health.get_engine", _broken_engine)
     resp = client.get("/api/v1/readyz")
     assert resp.status_code == 503
     assert resp.json()["status"] == "degraded"

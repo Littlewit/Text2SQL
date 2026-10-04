@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     # --- Redis（Celery broker + 限流计数器）---
     redis_url: str = "redis://localhost:6379/0"
 
+    # --- 认证与安全（KEY-01：密钥仅环境变量注入）---
+    secret_key: str = "dev-secret-change-me"  # JWT 签名密钥，生产必须覆盖
+    token_expire_minutes: int = 480  # 会话 token 有效期，P-33 待定，默认 8h
+    login_lockout_threshold: int = 5  # 登录失败锁定阈值，P-32 待定
+
     # --- LLM（DeepSeek，Q-07 确认前默认云端 API）---
     llm_api_key: str = ""  # 仅环境变量注入，禁止写入代码仓库（KEY-01）
     llm_base_url: str = "https://api.deepseek.com/v1"
