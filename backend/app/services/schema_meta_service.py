@@ -56,7 +56,7 @@ async def annotate_column(
         raise AppError(40400, "字段不存在", 404)
     await _snapshot_and_track(db, cm, "column", operator_id)
 
-    for k in ("cn_name", "description", "unit", "usage_type", "is_sensitive"):
+    for k in ("cn_name", "description", "unit", "usage_type", "is_sensitive", "hidden_roles"):
         if k in fields and fields[k] is not None:
             setattr(cm, k, fields[k])
 

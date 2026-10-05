@@ -45,8 +45,8 @@ def _get_redis_sync():
     return _redis
 
 
-async def reset_rate_limits() -> None:
-    """测试/运维辅助：清空全部限流状态（含 Redis）。"""
+def reset_rate_limits() -> None:
+    """测试/运维辅助：清空全部限流状态（含 Redis）。同步实现，测试夹具可直接调用。"""
     _windows.clear()
     _active_mem.clear()
     r = _get_redis_sync()

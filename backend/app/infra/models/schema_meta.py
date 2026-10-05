@@ -63,7 +63,8 @@ class ColumnMeta(IntPkMixin, Base):
     description: Mapped[str | None] = mapped_column(Text)
     unit: Mapped[str | None] = mapped_column(String(32))  # 单位：元/%/件
     usage_type: Mapped[str | None] = mapped_column(String(16))  # dimension / metric / both
-    is_sensitive: Mapped[bool] = mapped_column(Boolean, default=False)  # 敏感标记（FR-SEC-15）
+    is_sensitive: Mapped[bool] = mapped_column(Boolean, default=False)  # 敏感标记（FR-SEC-20）
+    hidden_roles: Mapped[dict | list | None] = mapped_column(JSON)  # 对这些角色不可见（FR-SEC-15）
     sample_values: Mapped[dict | list | None] = mapped_column(JSON)  # 低基数枚举采样（FR-SCH-05）
 
     table_meta: Mapped["TableMeta"] = relationship(back_populates="columns")

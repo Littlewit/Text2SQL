@@ -354,3 +354,87 @@ async def uncaptured_questions(
 ):
     """澄清/拒答/失败问题聚合清单 → 待补充指标与标注待办。"""
     return ok(await ops_service.uncaptured_questions(db, limit))
+
+
+# ==================== 行级权限策略（FR-SEC-10/12，M2-T3） ====================
+class RowPolicyCreate(BaseModel):
+    datasource_id: int
+    table_meta_id: int
+    filter_template: str = Field(min_length=1, max_length=500)
+    apply_to_role_ids: list[str]
+    combine_mode: str = Field(default="union", pattern="^(union|intersect)$")
+    description: str | None = Field(default=None, max_length=256)
+
+
+@router.get("/admin/row-policies")
+async def list_row_policies(
+    datasource_id: int | None = Query(default=None),
+    _: User = Depends(da_or_ad),
+    db: AsyncSession = Depends(get_session),
+):
+    """行级权限策略列表（FR-SEC-10）。"""
+    from sqlalchemy import select
+
+    from app.infra.models import RowPolicy as RP
+
+    stmt = select(RP)
+    if datasource_id is not None:
+        stmt = stmt.where(RP.datasource_id == datasource_id)
+    items = (await db.execute(stmt)).scalars().all()
+    return ok([
+        {"id": p.id, "datasource_id": p.datasource_id, "table_meta_id": p.table_meta_id,
+         "filter_template": p.filter_template, "apply_to_role_ids": p.apply_to_role_ids,
+         "combine_mode": p.combine_mode, "enabled": p.enabled}
+        for p in items
+    ])
+
+
+@router.post("/admin/row-policies", status_code=201)
+async def create_row_policy(
+    body: RowPolicyCreate,
+    operator: User = Depends(da_or_ad),
+    db: AsyncSession = Depends(get_session),
+):
+    """创建行级权限策略（FR-SEC-10）；变更即时生效（FR-SEC-13，实时加载）。"""
+    from app.infra.models import RowPolicy as RP
+
+    p = RP(
+        datasource_id=body.datasource_id,
+        table_meta_id=body.table_meta_id,
+        filter_template=body.filter_template,
+        apply_to_role_ids=body.apply_to_role_ids,
+        combine_mode=body.combine_mode,
+    )
+    db.add(p)
+    from app.services import audit_service
+
+    await audit_service.record(
+        db, user_id=operator.id, action="admin.row_policy.create",
+        object_type="row_policy", object_id=str(p.id),
+        detail={"filter": body.filter_template, "roles": body.apply_to_role_ids,
+                "combine_mode": body.combine_mode},
+    )
+    await db.commit()
+    return ok({"id": p.id})
+
+
+@router.delete("/admin/row-policies/{policy_id}")
+async def delete_row_policy(
+    policy_id: int,
+    operator: User = Depends(da_or_ad),
+    db: AsyncSession = Depends(get_session),
+):
+    from app.infra.models import RowPolicy as RP
+
+    p = await db.get(RP, policy_id)
+    if p is None:
+        raise AppError(40400, "策略不存在", 404)
+    await db.delete(p)
+    from app.services import audit_service
+
+    await audit_service.record(
+        db, user_id=operator.id, action="admin.row_policy.delete",
+        object_type="row_policy", object_id=str(policy_id),
+    )
+    await db.commit()
+    return ok({"deleted": True})

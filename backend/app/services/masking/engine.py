@@ -88,3 +88,40 @@ def mask_rows(
         for row in rows
     ]
     return columns, masked
+
+
+def mask_risk_warnings(sql: str, sensitive_columns: set[str]) -> list[str]:
+    """脱敏反推风险分析（FR-SEC-23，M2-T3）：脱敏列参与分组/等值筛选时告警。
+
+    掩码值仍可能被用于反推（如按掩码手机号分组计数即等于按原值分组）。
+    MVP 采用告警而非拦截；拦截模式随需求确认（Q-09）后启用。
+    """
+    if not sensitive_columns:
+        return []
+    import sqlglot
+    from sqlglot import exp
+
+    try:
+        ast = sqlglot.parse_one(sql, dialect="postgres")
+    except sqlglot.errors.SqlglotError:
+        return []
+
+    warnings: list[str] = []
+    for col in ast.find_all(exp.Column):
+        if col.name.lower() not in sensitive_columns:
+            continue
+        in_group = col.find_ancestor(exp.Group)
+        in_eq = any(
+            isinstance(p.this, exp.Column) and p.this.name.lower() == col.name.lower()
+            for p in ast.find_all(exp.EQ)
+            if isinstance(p.this, exp.Column)
+        )
+        if in_group:
+            w = f"脱敏字段 {col.name} 参与了分组，分组计数等价于按原值分组，存在反推风险"
+            if w not in warnings:
+                warnings.append(w)
+        elif in_eq:
+            w = f"脱敏字段 {col.name} 参与了等值筛选，可能被用于反推原值"
+            if w not in warnings:
+                warnings.append(w)
+    return warnings

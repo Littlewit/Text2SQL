@@ -101,6 +101,6 @@ class RowPolicy(Base):
     table_meta_id: Mapped[int] = mapped_column(BigInteger)
     filter_template: Mapped[str] = mapped_column(Text)  # SQL 片段，如 region = '华东'
     apply_to_role_ids: Mapped[dict | list] = mapped_column(JSON)  # 角色编码列表
-    combine_mode: Mapped[str] = mapped_column(String(8), default="union")  # union/intersect
+    combine_mode: Mapped[str] = mapped_column(String(16), default="union")  # union/intersect
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

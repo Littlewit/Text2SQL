@@ -7,7 +7,7 @@ import {
   getUncaptured, patchConfig, reviewFeedback as reviewFeedbackApi, scanDatasource, testDatasource,
 } from '../api'
 
-type Tab = 'datasource' | 'schema' | 'metric' | 'config' | 'fewshot' | 'uncaptured'
+type Tab = 'datasource' | 'schema' | 'metric' | 'config' | 'fewshot' | 'uncaptured' | 'rowpolicy'
 const tab = ref<Tab>('datasource')
 const msg = ref('')
 
@@ -34,6 +34,10 @@ const fewShots = ref<{ id: number; question: string; sql_text: string; status: n
 const fewShotForm = ref({ question: '', sql_text: '', explanation: '' })
 const uncaptured = ref<{ items: { question: string; count: number; statuses: string[] }[]; total_uncovered: number }>()
 
+// M2-T3：行级权限策略
+const rowPolicies = ref<{ id: number; table_meta_id: number; filter_template: string; apply_to_role_ids: string[]; combine_mode: string; enabled: boolean }[]>([])
+const policyForm = ref({ table_meta_id: 0, filter_template: '', apply_to_role_ids: 'R-BIZ', combine_mode: 'union' })
+
 async function loadAll() {
   dss.value = await getDatasources()
   if (dss.value.length && !selectedDs.value) selectedDs.value = dss.value[0].id
@@ -42,10 +46,29 @@ async function loadAll() {
 }
 
 async function loadFewShots() {
-  const [{ getFewShots, getPendingFeedbacks, getUncaptured }] = await Promise.all([import('../api')])
+  const [{ getFewShots, getPendingFeedbacks, getUncaptured, getRowPolicies }] = await Promise.all([import('../api')])
   fewShots.value = await getFewShots()
   feedbacks.value = await getPendingFeedbacks()
   uncaptured.value = await getUncaptured()
+  rowPolicies.value = await getRowPolicies()
+}
+
+async function addRowPolicy() {
+  const { createRowPolicy } = await import('../api')
+  await createRowPolicy({
+    datasource_id: selectedDs.value, table_meta_id: policyForm.value.table_meta_id,
+    filter_template: policyForm.value.filter_template,
+    apply_to_role_ids: policyForm.value.apply_to_role_ids.split(',').map((s) => s.trim()),
+    combine_mode: policyForm.value.combine_mode,
+  })
+  msg.value = '策略已创建，对新查询立即生效（FR-SEC-13）'
+  await loadFewShots()
+}
+
+async function delRowPolicy(id: number) {
+  const { deleteRowPolicy } = await import('../api')
+  await deleteRowPolicy(id)
+  await loadFewShots()
 }
 
 async function reviewFeedback(id: number, approve: boolean) {
@@ -121,6 +144,7 @@ async function saveConfig(c: { key: string; value: unknown }) {
       <button :class="{ on: tab === 'metric' }" @click="tab = 'metric'">指标</button>
       <button :class="{ on: tab === 'config' }" @click="tab = 'config'">系统配置</button>
       <button :class="{ on: tab === 'fewshot' }" @click="tab = 'fewshot'; loadFewShots()">样例库与反馈</button>
+      <button :class="{ on: tab === 'rowpolicy' }" @click="tab = 'rowpolicy'; loadFewShots()">行级权限</button>
       <router-link to="/" class="back">返回对话</router-link>
     </nav>
     <p v-if="msg" class="msg">{{ msg }}</p>
@@ -253,6 +277,37 @@ async function saveConfig(c: { key: string; value: unknown }) {
             <td>{{ u.question }}</td>
             <td>{{ u.count }}</td>
             <td>{{ u.statuses.join(' / ') }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 行级权限策略（M2-T3：FR-SEC-10/12） -->
+    <section v-if="tab === 'rowpolicy'">
+      <h2>行级权限策略（注入执行 SQL，对新查询立即生效）</h2>
+      <form class="row" @submit.prevent="addRowPolicy">
+        <select v-model.number="policyForm.table_meta_id">
+          <option v-for="t in tables" :key="t.id" :value="t.id">{{ t.table_name }}</option>
+        </select>
+        <input v-model="policyForm.filter_template" placeholder="过滤片段，如 region = '华东'" required />
+        <input v-model="policyForm.apply_to_role_ids" placeholder="角色，逗号分隔（R-BIZ）" required />
+        <select v-model="policyForm.combine_mode">
+          <option value="union">并集 (OR)</option>
+          <option value="intersect">交集 (AND)</option>
+        </select>
+        <button type="submit">创建</button>
+      </form>
+      <p class="hint">先在「数据源」或「表标注」页选定数据源并扫描，再选择目标表</p>
+      <table>
+        <thead><tr><th>表 ID</th><th>过滤条件</th><th>适用角色</th><th>叠加</th><th>启用</th><th></th></tr></thead>
+        <tbody>
+          <tr v-for="p in rowPolicies" :key="p.id">
+            <td>{{ p.table_meta_id }}</td>
+            <td><code>{{ p.filter_template }}</code></td>
+            <td>{{ p.apply_to_role_ids.join(', ') }}</td>
+            <td>{{ p.combine_mode }}</td>
+            <td>{{ p.enabled ? '是' : '否' }}</td>
+            <td><button class="danger" @click="delRowPolicy(p.id)">删除</button></td>
           </tr>
         </tbody>
       </table>

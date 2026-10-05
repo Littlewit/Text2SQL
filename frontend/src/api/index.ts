@@ -122,6 +122,11 @@ export const reviewFewShot = (id: number, approve: boolean) =>
   http.post(`/admin/few-shots/${id}/review?approve=${approve}`).then((r) => r.data.data)
 export const deleteFewShot = (id: number) => http.delete(`/admin/few-shots/${id}`).then((r) => r.data)
 export const getUncaptured = () => http.get('/admin/uncaptured').then((r) => r.data.data)
+// M2-T3：行级权限策略
+export const getRowPolicies = (dsId?: number) =>
+  http.get('/admin/row-policies', { params: dsId ? { datasource_id: dsId } : {} }).then((r) => r.data.data)
+export const createRowPolicy = (body: Record<string, unknown>) => http.post('/admin/row-policies', body).then((r) => r.data.data)
+export const deleteRowPolicy = (id: number) => http.delete(`/admin/row-policies/${id}`).then((r) => r.data)
 
 // ---------- 管理台 ----------
 export const getDatasources = () => http.get('/admin/datasources').then((r) => r.data.data)

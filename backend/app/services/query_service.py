@@ -126,13 +126,13 @@ async def run_query(
     # ---------- 阶段 3~5：Prompt → 生成 → 校验（含自愈重试）----------
     await emit("stage", {"stage": "generating_sql", "message": "生成 SQL 中"})
     join_paths = await _load_join_paths(db, datasource_id)
-    schema_fragment, metrics_fragment = await _render_context(db, recalled, nlu, join_paths)
+    schema_fragment, metrics_fragment = await _render_context(db, recalled, nlu, join_paths, user)
     few_shots = await recall_few_shots_safe(db, question, datasource_id)
     await fewshot_service.increment_hit_counts(db, [fs.id for fs in few_shots])  # FR-ADM-04 效果统计
 
     context_summary_full = context_summary
     last_error_hint: str | None = None
-    guard_ctx = await _guard_context(db, datasource_id, row_limit)
+    guard_ctx = await _guard_context(db, datasource_id, row_limit, user)
     generated = None
     total_tokens = 0
 
@@ -269,11 +269,15 @@ def _context_summary(ctx: dict | None) -> str | None:
 
 
 async def _render_context(db: AsyncSession, recalled, nlu: NluResult,
-                          join_paths: list[tuple[str, str, str, str]] | None = None):
-    """按检索结果渲染 Schema 片段（含关联关系 FR-SCH-14）与指标口径片段（FR-NLU-22）。"""
+                          join_paths: list[tuple[str, str, str, str]] | None = None,
+                          user: User | None = None):
+    """按检索结果渲染 Schema 片段（含关联关系 FR-SCH-14）与指标口径片段（FR-NLU-22）。
+
+    用户不可见列（FR-SEC-15）从 Prompt 源头剔除，避免生成越权引用。
+    """
+    user_roles = set(user.role_codes) if user else set()
 
     table_ids = {r.object_id for r in recalled if r.object_type == "table"}
-    col_ids = {r.object_id for r in recalled if r.object_type == "column"}
     tables = (
         (await db.execute(select(TableMeta).where(TableMeta.id.in_(table_ids or {0})))).scalars().all()
     )
@@ -283,15 +287,13 @@ async def _render_context(db: AsyncSession, recalled, nlu: NluResult,
         cm_rows = (
             await db.execute(select(ColumnMeta).where(ColumnMeta.table_meta_id == tm.id))
         ).scalars().all()
-        columns[tm.id] = list(cm_rows)
-        for cm in cm_rows:
-            # 检索命中的字段或命中表的全部字段均可带枚举
-            if cm.id in col_ids or True:
-                e_rows = (
-                    await db.execute(select(EnumDict).where(EnumDict.column_meta_id == cm.id))
-                ).scalars().all()
-                if e_rows:
-                    enums[cm.id] = list(e_rows)
+        columns[tm.id] = [c for c in cm_rows if not (set(c.hidden_roles or []) & user_roles)]
+        for cm in columns[tm.id]:
+            e_rows = (
+                await db.execute(select(EnumDict).where(EnumDict.column_meta_id == cm.id))
+            ).scalars().all()
+            if e_rows:
+                enums[cm.id] = list(e_rows)
 
     # 指标：NLU 归一化 code + 检索命中
     metric_codes = set(nlu.metrics)
@@ -333,8 +335,11 @@ async def _load_join_paths(db: AsyncSession, datasource_id: int) -> list[tuple[s
     return result
 
 
-async def _guard_context(db: AsyncSession, datasource_id: int, row_limit: int) -> GuardContext:
-    """构建校验上下文：白名单表（FR-SCH-03）+ 可配置黑名单（FR-SQL-16）+ 索引列（FR-SQL-21）。"""
+async def _guard_context(db: AsyncSession, datasource_id: int, row_limit: int,
+                         user: User | None = None) -> GuardContext:
+    """构建校验上下文：白名单表（FR-SCH-03）+ 角色列权限（FR-SEC-15）
+    + 可配置黑名单（FR-SQL-16）+ 索引列（FR-SQL-21）。"""
+    user_roles = set(user.role_codes) if user else set()
     tables = (
         (
             await db.execute(
@@ -350,9 +355,12 @@ async def _guard_context(db: AsyncSession, datasource_id: int, row_limit: int) -
     indexed: set[str] = set()
     for tm in tables:
         cols = (
-            await db.execute(select(ColumnMeta.column_name).where(ColumnMeta.table_meta_id == tm.id))
+            await db.execute(select(ColumnMeta).where(ColumnMeta.table_meta_id == tm.id))
         ).scalars()
-        allowed[tm.table_name.lower()] = {c.lower() for c in cols}
+        allowed[tm.table_name.lower()] = {
+            c.column_name.lower() for c in cols
+            if not (set(c.hidden_roles or []) & user_roles)  # FR-SEC-15：不可见列移出白名单
+        }
         # 索引首列集合（FR-SQL-21 提示来源）
         for idx in (tm.indexes or []):
             idx_cols = idx.get("columns") or []

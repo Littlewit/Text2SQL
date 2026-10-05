@@ -17,6 +17,7 @@ class ColumnPatch(BaseModel):
     unit: str | None = Field(default=None, max_length=32)
     usage_type: Literal["dimension", "metric", "both"] | None = None
     is_sensitive: bool | None = None
+    hidden_roles: list[str] | None = None  # FR-SEC-15：对这些角色不可见
 
 
 class SchemaSearchRequest(BaseModel):

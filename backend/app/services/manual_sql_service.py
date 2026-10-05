@@ -32,7 +32,7 @@ async def execute_manual_sql(
     timeout_s = await get_config_value(db, "query.timeout_s", 30)
 
     # 1) AST 安全校验（与生成链路同一管道，FR-SQL-32 同权同责）
-    guard_ctx = await _guard_context(db, datasource_id, row_limit)
+    guard_ctx = await _guard_context(db, datasource_id, row_limit, user)
     guard, errs = validate(sql, guard_ctx)
     if not guard.ok:
         raise AppError(
@@ -52,11 +52,13 @@ async def execute_manual_sql(
     # 3) 只读执行（FR-SEC-30）
     result = await execute_readonly(ds, sql_text, row_limit, timeout_s)
 
-    # 4) 脱敏（FR-SEC-22）
+    # 4) 脱敏（FR-SEC-22）+ 反推风险分析（FR-SEC-23）
     col_meta = await _column_meta_map(db, datasource_id, result.columns)
     col_infos = [masking.ColumnMaskInfo(name=c, is_sensitive=col_meta.get(c.lower(), False))
                  for c in result.columns]
     _, masked_rows = masking.mask_rows(col_infos, result.rows)
+    sensitive_cols = {n.lower() for n, s in col_meta.items() if s}
+    risk_warnings = masking.mask_risk_warnings(sql_text, sensitive_cols)
 
     def _jsonable(v):
         if isinstance(v, decimal.Decimal):
@@ -75,7 +77,7 @@ async def execute_manual_sql(
     await db.commit()
     return {
         "sql": sql_text,
-        "warnings": guard.warnings,
+        "warnings": guard.warnings + risk_warnings,
         "columns": result.columns,
         "rows": masked_rows,
         "row_count": result.row_count,
