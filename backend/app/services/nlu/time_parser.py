@@ -51,9 +51,11 @@ def parse_time_expression(text: str, today: date | None = None) -> tuple[date, d
     if "这个月" in t or "本月" in t or "当月" in t:
         return month_range(today.year, today.month)
     if "上季度" in t or "上个季度" in t:
-        q = (today.month - 1) // 3  # 0-based
-        py, pq = (today.year, q) if q > 0 else (today.year - 1, 3)
-        return quarter_range(py, pq + 1)  # 1-based
+        # 当前季度 0-based q0 恰为上季度 1-based 序号；1 月的上季度是去年 Q4
+        q0 = (today.month - 1) // 3
+        if q0 > 0:
+            return quarter_range(today.year, q0)
+        return quarter_range(today.year - 1, 4)
     if "这个季度" in t or "本季度" in t or "当季" in t:
         return quarter_range(today.year, (today.month - 1) // 3 + 1)
     if "去年" in t:

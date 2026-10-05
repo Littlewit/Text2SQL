@@ -46,8 +46,8 @@ async def query(
     db: AsyncSession = Depends(get_session),
 ):
     """同步查询：返回最终结果（SSE 版本见 /query/stream）。"""
-    check_query_allowed(user.id)
-    mark_started(user.id)
+    await check_query_allowed(user.id)
+    await mark_started(user.id)
     events: list[tuple[str, dict]] = []
 
     async def emit(event_type: str, payload: dict) -> None:
@@ -58,7 +58,7 @@ async def query(
             db, user, get_llm(), body.question, body.conversation_id, body.datasource_id, emit
         )
     finally:
-        mark_finished(user.id)
+        await mark_finished(user.id)
 
     # 组装最终响应：取最后一个 result/chart 事件
     result = next((p for t, p in reversed(events) if t == "result"), None)
@@ -78,7 +78,7 @@ async def query_stream(
     db: AsyncSession = Depends(get_session),
 ):
     """SSE 流式查询（FR-UI-05）：分阶段实时推送 stage/clarify/sql/result/chart/error/done。"""
-    check_query_allowed(user.id)
+    await check_query_allowed(user.id)
 
     async def event_stream():
         queue: asyncio.Queue = asyncio.Queue()
@@ -86,7 +86,7 @@ async def query_stream(
         async def emit(event_type: str, payload: dict) -> None:
             await queue.put((event_type, payload))
 
-        mark_started(user.id)
+        await mark_started(user.id)
         task = None
         try:
             task = asyncio.create_task(
@@ -107,7 +107,7 @@ async def query_stream(
             await task
             yield "event: __end__\ndata: {}\n\n"
         finally:
-            mark_finished(user.id)
+            await mark_finished(user.id)
 
     return StreamingResponse(
         event_stream(),

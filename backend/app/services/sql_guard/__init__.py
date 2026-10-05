@@ -52,10 +52,10 @@ def validate(sql: str, ctx: GuardContext) -> tuple[GuardResult, list[GuardError]
     """执行完整校验管道，返回 (结果, 可回灌错误列表)。任一阶段失败即终止。"""
     result = GuardResult(ok=False)
 
-    # 阶段 1：AST 解析（FR-SQL-10）——语法错误 100% 拒绝
+    # 阶段 1：AST 解析（FR-SQL-10）——语法/词法错误 100% 拒绝
     try:
         statements = sqlglot.parse(sql, dialect=ctx.dialect)
-    except sqlglot.errors.ParseError as e:
+    except (sqlglot.errors.ParseError, sqlglot.errors.TokenError) as e:
         err = GuardError("parse", 42203, f"SQL 语法错误: {e}", "请检查语法后重新生成")
         result.errors.append(err)
         return result, [err]
@@ -108,19 +108,28 @@ def _check_statement_type(ast: exp.Expression) -> GuardError | None:
 
 
 def _check_sensitive(ast: exp.Expression) -> GuardError | None:
-    """危险函数与系统 schema 访问拦截（FR-SQL-13）。"""
+    """危险函数与系统 schema/对象访问拦截（FR-SQL-13）。"""
     for func in ast.find_all(exp.Anonymous, exp.Func):
         name = (getattr(func, "this", None) or "").lower() if isinstance(func, exp.Anonymous) else \
                func.sql_name().lower().replace("(", "")
         if name in BLOCKED_FUNCTIONS:
             return GuardError("sensitive", 40302, f"函数 {name} 被禁止", "移除该函数后重试")
+    # 系统信息函数（sqlglot 解析为专用节点而非 Anonymous，按版本安全枚举）
+    system_nodes = [getattr(exp, n) for n in
+                    ("CurrentDatabase", "CurrentUser", "CurrentSchema", "SessionUser")
+                    if hasattr(exp, n)]
+    if system_nodes:
+        for node in ast.find_all(*system_nodes):
+            return GuardError("sensitive", 40302,
+                              f"系统函数 {type(node).__name__} 被禁止", "只允许查询业务数据")
     for table in ast.find_all(exp.Table):
         if (table.db or "").lower() in BLOCKED_SCHEMAS or (table.catalog or "").lower() in BLOCKED_SCHEMAS:
             return GuardError("sensitive", 40302,
                               f"禁止访问系统对象 {table.name}", "只允许访问白名单业务表")
-        if table.name.lower() in BLOCKED_SCHEMAS:
+        # pg_* 系统对象可省略 schema 前缀，按名称前缀拦截
+        if table.name.lower() in BLOCKED_SCHEMAS or table.name.lower().startswith("pg_"):
             return GuardError("sensitive", 40302,
-                              f"禁止访问系统 schema {table.name}", "只允许访问白名单业务表")
+                              f"禁止访问系统对象 {table.name}", "只允许访问白名单业务表")
     return None
 
 
@@ -176,17 +185,23 @@ def _perf_guard(ast: exp.Expression, ctx: GuardContext) -> list[GuardError]:
     errors: list[GuardError] = []
 
     # 1. 展开 SELECT *（FR-SQL-14：禁止 *，自动展开为白名单列）
+    cte_names = {c.alias_or_name.lower() for c in ast.find_all(exp.CTE)}
     for select_expr in ast.find_all(exp.Select):
         stars = [e for e in select_expr.expressions if isinstance(e, exp.Star)]
         if not stars:
             continue
-        froms = list(select_expr.find_all(exp.Table))
+        # 仅取直接 FROM 子句的表（find_all 会误入 CTE 定义子树）
+        from_clause = select_expr.args.get("from_")
+        froms = list(from_clause.find_all(exp.Table)) if from_clause else []
         if len(froms) != 1:
             errors.append(GuardError("perf", 42203,
                                      "SELECT * 无法唯一确定来源表，请显式列出字段",
                                      "显式写出所需字段"))
             continue
         table_name = froms[0].name.lower()
+        if table_name in cte_names:
+            # CTE 的 * 不展开：CTE 内部查询已过全量白名单校验，列集由其定义决定
+            continue
         cols = sorted(ctx.allowed_tables.get(table_name, set()))
         if not cols:
             errors.append(GuardError("perf", 42203,

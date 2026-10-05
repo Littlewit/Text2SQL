@@ -46,6 +46,8 @@ jobs:
         run: pytest -m "not integration" -q
       - name: Integration tests
         run: pytest -m integration -q
+      - name: Eval offline gate（EV-04：安全与时间解析用例 100% 门禁）
+        run: python -m eval.run --offline --gate
 
   frontend:
     runs-on: ubuntu-latest

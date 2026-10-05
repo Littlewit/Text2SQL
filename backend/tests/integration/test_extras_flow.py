@@ -15,6 +15,12 @@ from tests.integration.conftest import auth_header as _auth
 
 pytestmark = pytest.mark.integration
 
+
+async def _reset_state():
+    """复位熔断器与限流器（跨用例状态隔离）。"""
+    reset_breaker()
+    await reset_rate_limits()
+
 _NLU_OK = json.dumps({
     "intent": "stat", "out_of_scope": False, "refuse_reason": None, "clarify": None,
     "entities": {"time_expression": "上个月", "metrics": ["GMV"], "dimensions": ["店铺"],
@@ -31,14 +37,12 @@ _SQL_OK = json.dumps({
 
 
 @pytest.fixture(autouse=True)
-def _fake_routes():
-    reset_breaker()
-    reset_rate_limits()
+async def _fake_routes():
+    await _reset_state()
     set_fake_routes({NLU_MARKER: _NLU_OK, SQL_GEN_MARKER: _SQL_OK})
     yield
     clear_fake_routes()
-    reset_breaker()
-    reset_rate_limits()
+    await _reset_state()
 
 
 def _run_query(client, token, conv_id, ds_id, question="上个月哪个店铺GMV最高？"):
