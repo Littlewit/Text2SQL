@@ -6,51 +6,11 @@
 
 import pytest
 
+from tests.integration.conftest import auth_header as _auth
+
 pytestmark = pytest.mark.integration
 
-
-def _login(client, username="admin", password="admin123") -> str:
-    resp = client.post("/api/v1/auth/login", json={"username": username, "password": password})
-    assert resp.status_code == 200, resp.text
-    return resp.json()["data"]["token"]
-
-
-def _auth(token):
-    return {"Authorization": f"Bearer {token}"}
-
-
-@pytest.fixture()
-def admin_token(client) -> str:
-    return _login(client)
-
-
-@pytest.fixture()
-def datasource_id(client, admin_token) -> int:
-    """接入 demo_business 示例数据源（指向 dev 容器内同实例的另一库）。"""
-    resp = client.post(
-        "/api/v1/admin/datasources",
-        headers=_auth(admin_token),
-        json={
-            "name": "零售演示库",
-            "host": "localhost",
-            "port": 5433,
-            "db_name": "demo_business",
-            "readonly_user": "t2s",
-            "password": "t2s",
-        },
-    )
-    assert resp.status_code == 201, resp.text
-    return resp.json()["data"]["id"]
-
-
-@pytest.fixture()
-def scanned(client, admin_token, datasource_id) -> int:
-    """已扫描的示例数据源：需要表元数据的用例使用本夹具。"""
-    resp = client.post(
-        f"/api/v1/admin/schema/datasources/{datasource_id}/scan", headers=_auth(admin_token)
-    )
-    assert resp.status_code == 200, resp.text
-    return datasource_id
+# admin_token / datasource_id / scanned 夹具见本目录 conftest.py（T2/T3 共用）
 
 
 def test_scan_discovers_demo_schema(client, admin_token, scanned):

@@ -7,6 +7,7 @@ from app.infra.models.audit import AuditLog
 from app.infra.models.base import Base
 from app.infra.models.config import SysConfig
 from app.infra.models.datasource import Datasource
+from app.infra.models.query import Conversation, FewShot, Message, QueryHistory, RowPolicy
 from app.infra.models.schema_meta import (
     ColumnMeta,
     EnumDict,
@@ -23,13 +24,18 @@ __all__ = [
     "AuditLog",
     "Base",
     "ColumnMeta",
+    "Conversation",
     "DataScope",
     "Datasource",
     "EnumDict",
+    "FewShot",
     "JoinPath",
+    "Message",
     "MetaRevision",
     "Metric",
+    "QueryHistory",
     "Role",
+    "RowPolicy",
     "SchemaEmbedding",
     "Synonym",
     "SysConfig",

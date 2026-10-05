@@ -61,8 +61,10 @@ def migrated(test_db_url):
 @pytest.fixture()
 def client(migrated):
     """每个测试一个全新引擎与 TestClient（同一事件循环上下文）。"""
+    # LLM_API_KEY 置空 → get_llm() 返回 FakeLLM（单测 conftest 注入了假 key，此处覆盖）
     os.environ["METADATA_DB_URL"] = migrated
     os.environ["SECRET_KEY"] = "test-secret"
+    os.environ["LLM_API_KEY"] = ""
 
     from app.core.config import get_settings
     from app.infra.db import reset_engine
@@ -87,3 +89,66 @@ class TestClientWrapper:
 
     def __exit__(self, *args):
         return self._client.__exit__(*args)
+
+
+# ---------- 共享业务夹具（T2/T3 用例复用）----------
+
+def auth_header(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture()
+def admin_token(client) -> str:
+    """admin 登录令牌（种子账号）。"""
+    resp = client.post("/api/v1/auth/login", json={"username": "admin", "password": "admin123"})
+    assert resp.status_code == 200, resp.text
+    return resp.json()["data"]["token"]
+
+
+@pytest.fixture()
+def datasource_id(client, admin_token) -> int:
+    """接入 demo_business 示例数据源（dev 容器同实例的另一库）。"""
+    resp = client.post(
+        "/api/v1/admin/datasources",
+        headers=auth_header(admin_token),
+        json={
+            "name": "零售演示库",
+            "host": "localhost",
+            "port": 5433,
+            "db_name": "demo_business",
+            "readonly_user": "t2s",
+            "password": "t2s",
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["data"]["id"]
+
+
+@pytest.fixture()
+def scanned(client, admin_token, datasource_id) -> int:
+    """已扫描的示例数据源：需要表元数据的用例使用本夹具。"""
+    resp = client.post(
+        f"/api/v1/admin/schema/datasources/{datasource_id}/scan", headers=auth_header(admin_token)
+    )
+    assert resp.status_code == 200, resp.text
+    return datasource_id
+
+
+@pytest.fixture()
+def biz_ready(client, admin_token, scanned) -> int:
+    """shop/orders 已纳入白名单的数据源（T3 查询链路前置，FR-SCH-03）。"""
+    headers = auth_header(admin_token)
+    tables = client.get(
+        "/api/v1/admin/schema/tables", headers=headers, params={"datasource_id": scanned}
+    ).json()["data"]
+    by_name = {t["table_name"]: t for t in tables}
+    for name, cn, desc in (
+        ("shop", "店铺", "店铺主数据，含所属区域（华东/华南/华北）"),
+        ("orders", "订单表", "订单主表，含订单日期、状态与实付金额"),
+    ):
+        r = client.patch(
+            f"/api/v1/admin/schema/tables/{by_name[name]['id']}",
+            headers=headers, json={"cn_name": cn, "description": desc, "included": True},
+        )
+        assert r.status_code == 200, r.text
+    return scanned
