@@ -157,10 +157,16 @@ add("sql_exec", "ex_sc03", "对比一下华东和华南的销售趋势", {
                      "JOIN shop s ON s.id = o.shop_id WHERE s.region IN ('华东','华南') "
                      "GROUP BY s.region, o.order_date ORDER BY o.order_date")}, datasource="demo_business")
 
+_LAST_MONTH_GTE = "o.order_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month'"
+_LAST_MONTH_LT = "o.order_date < DATE_TRUNC('month', CURRENT_DATE)"
 ORDER_COUNT_VARIANTS = [
-    ("本月订单量是多少", "SELECT COUNT(*) FROM orders WHERE order_date >= DATE_TRUNC('month', CURRENT_DATE)"),
-    ("上个月订单总量", "SELECT COUNT(*) FROM orders WHERE order_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month' AND order_date < DATE_TRUNC('month', CURRENT_DATE)"),
-    ("各区域上个月的订单数", "SELECT s.region, COUNT(*) FROM orders o JOIN shop s ON s.id = o.shop_id WHERE o.order_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month' AND o.order_date < DATE_TRUNC('month', CURRENT_DATE) GROUP BY s.region"),
+    ("本月订单量是多少",
+     "SELECT COUNT(*) FROM orders WHERE order_date >= DATE_TRUNC('month', CURRENT_DATE)"),
+    ("上个月订单总量",
+     f"SELECT COUNT(*) FROM orders WHERE {_LAST_MONTH_GTE} AND {_LAST_MONTH_LT}"),
+    ("各区域上个月的订单数",
+     f"SELECT s.region, COUNT(*) FROM orders o JOIN shop s ON s.id = o.shop_id "
+     f"WHERE {_LAST_MONTH_GTE} AND {_LAST_MONTH_LT} GROUP BY s.region"),
 ]
 for q, std in ORDER_COUNT_VARIANTS:
     add("sql_exec", "ex_count", q, {"standard_sql": std}, datasource="demo_business")

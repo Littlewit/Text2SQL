@@ -8,6 +8,7 @@ from app.infra.models.base import Base
 from app.infra.models.config import SysConfig
 from app.infra.models.datasource import Datasource
 from app.infra.models.favorite import Favorite, Share, ShareAccess
+from app.infra.models.feedback import Feedback
 from app.infra.models.query import Conversation, FewShot, Message, QueryHistory, RowPolicy
 from app.infra.models.schema_meta import (
     ColumnMeta,
@@ -30,6 +31,7 @@ __all__ = [
     "Datasource",
     "EnumDict",
     "Favorite",
+    "Feedback",
     "FewShot",
     "JoinPath",
     "Message",

@@ -7,7 +7,7 @@ Celery 异步化在 T3/T5 接入，T2 以内联调用保证标注后立即可检
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infra.models import ColumnMeta, Metric, SchemaEmbedding, Synonym, TableMeta
+from app.infra.models import ColumnMeta, FewShot, Metric, SchemaEmbedding, Synonym, TableMeta
 from app.llm.embedding import EmbeddingClient
 
 
@@ -32,6 +32,11 @@ def _metric_content(m: Metric) -> str:
 
 def _synonym_content(s: Synonym) -> str:
     return f"同义词 {s.term}"
+
+
+def _few_shot_content(fs: FewShot) -> str:
+    """样例的向量化文本：问题原文为主（召回按问题相似度）。"""
+    return f"示例 问题：{fs.question}"
 
 
 async def vectorize_object(
@@ -82,7 +87,19 @@ async def _load_content(db: AsyncSession, object_type: str, object_id: int):
     if object_type == "synonym":
         s = await db.get(Synonym, object_id)
         return (_synonym_content(s), s.datasource_id) if s else (None, None)
+    if object_type == "few_shot":
+        fs = await db.get(FewShot, object_id)
+        return (_few_shot_content(fs), fs.datasource_id) if fs else (None, None)
     return None, None
+
+
+async def build_few_shot(db: AsyncSession, embedder: EmbeddingClient, **fields) -> FewShot:
+    """构造带向量的 Few-shot 实例（embedding 非空约束要求先算后插）。"""
+    fs = FewShot(**fields)
+    vec = (await embedder.embed([_few_shot_content(fs)]))[0]
+    fs.embedding = vec
+    fs.model_version = embedder.model_version
+    return fs
 
 
 async def revectorize_datasource(db: AsyncSession, embedder: EmbeddingClient, ds_id: int) -> int:

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_config_value
 from app.core.errors import AppError
+from app.core.obs import LLM_TOKENS, QUERIES, RETRIES
 from app.infra.models import (
     ColumnMeta,
     Conversation,
@@ -24,10 +25,9 @@ from app.infra.models import (
     TableMeta,
     User,
 )
-from app.core.obs import LLM_TOKENS, QUERIES, RETRIES
 from app.llm.client import LLMClient
 from app.llm.embedding import get_embedder
-from app.services import audit_service, masking
+from app.services import audit_service, fewshot_service, masking
 from app.services.executor.runner import execute_readonly
 from app.services.nlu.intent import NluResult, understand
 from app.services.permission.rewriter import rewrite_row_permissions
@@ -76,7 +76,8 @@ async def run_query(
     timeout_s = await get_config_value(db, "query.timeout_s", 30)
 
     history = QueryHistory(
-        conversation_id=conversation_id, user_id=user.id, question=question, exec_status="failed"
+        conversation_id=conversation_id, user_id=user.id, question=question,
+        datasource_id=datasource_id, exec_status="failed",
     )
 
     async def fail(code: int, message: str, status: str = "failed"):
@@ -126,6 +127,7 @@ async def run_query(
     await emit("stage", {"stage": "generating_sql", "message": "生成 SQL 中"})
     schema_fragment, metrics_fragment = await _render_context(db, recalled, nlu)
     few_shots = await recall_few_shots_safe(db, question, datasource_id)
+    await fewshot_service.increment_hit_counts(db, [fs.id for fs in few_shots])  # FR-ADM-04 效果统计
 
     context_summary_full = context_summary
     last_error_hint: str | None = None

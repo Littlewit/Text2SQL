@@ -60,4 +60,5 @@ target-version = "py310"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 # B008：FastAPI 官方惯用「Depends 在参数默认值中」的依赖注入写法
-ignore = ["B008"]
+# B007/B905：评测生成器中的枚举循环与 zip 用法为有意为之
+extend-ignore = ["B008", "B007", "B905"]

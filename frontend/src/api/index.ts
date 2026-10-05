@@ -109,6 +109,19 @@ export const getFollowups = (queryId: number) =>
 export const exportQuery = (queryId: number) =>
   http.post(`/query/${queryId}/export`, null, { responseType: 'blob' }).then((r) => r.data as Blob)
 export const createShare = (body: Record<string, unknown>) => http.post('/shares', body).then((r) => r.data.data)
+// M2-T1：反馈与样例库
+export const createFeedback = (queryId: number, body: Record<string, unknown>) =>
+  http.post(`/query/${queryId}/feedback`, body).then((r) => r.data.data)
+export const getPendingFeedbacks = () => http.get('/admin/feedbacks').then((r) => r.data.data)
+export const reviewFeedback = (id: number, approve: boolean) =>
+  http.post(`/admin/feedbacks/${id}/review?approve=${approve}`).then((r) => r.data.data)
+export const getFewShots = (status?: number) =>
+  http.get('/admin/few-shots', { params: status !== undefined ? { status } : {} }).then((r) => r.data.data)
+export const createFewShot = (body: Record<string, unknown>) => http.post('/admin/few-shots', body).then((r) => r.data.data)
+export const reviewFewShot = (id: number, approve: boolean) =>
+  http.post(`/admin/few-shots/${id}/review?approve=${approve}`).then((r) => r.data.data)
+export const deleteFewShot = (id: number) => http.delete(`/admin/few-shots/${id}`).then((r) => r.data)
+export const getUncaptured = () => http.get('/admin/uncaptured').then((r) => r.data.data)
 
 // ---------- 管理台 ----------
 export const getDatasources = () => http.get('/admin/datasources').then((r) => r.data.data)

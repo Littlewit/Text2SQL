@@ -34,16 +34,16 @@ _SQL_OK = json.dumps({
 
 
 @pytest.fixture(autouse=True)
-async def _fake_llm_routes():
+def _fake_llm_routes():
     """默认注入成功链路路由并复位熔断器/限流器；用例内部可覆盖路由。"""
     reset_breaker()
-    await reset_rate_limits()
+    reset_rate_limits()
     set_fake_routes({__import__("app.services.nlu.intent", fromlist=["NLU_MARKER"]).NLU_MARKER: _NLU_OK,
                      __import__("app.services.sql_gen.generator", fromlist=["SQL_GEN_MARKER"]).SQL_GEN_MARKER: _SQL_OK})
     yield
     clear_fake_routes()
     reset_breaker()
-    await reset_rate_limits()
+    reset_rate_limits()
 
 
 def _create_conversation(client, token) -> int:

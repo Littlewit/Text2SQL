@@ -72,6 +72,7 @@ class QueryHistory(IntPkMixin, Base):
     chart_config: Mapped[dict | None] = mapped_column(JSON)
     retry_count: Mapped[int] = mapped_column(SmallInteger, default=0)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)  # 逻辑删除（DR-06）
+    datasource_id: Mapped[int | None] = mapped_column(BigInteger)  # 查询所属数据源（样例/统计用）
 
 
 class FewShot(IntPkMixin, Base):

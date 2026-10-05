@@ -2,11 +2,12 @@
 // 管理后台（FR-ADM-02/03/05 精简版）：数据源接入与扫描、表标注、指标、系统配置
 import { onMounted, ref } from 'vue'
 import {
-  annotateTable, createDatasource, getColumns, getConfigs, getDatasources,
-  getMetrics, getTables, patchConfig, scanDatasource, testDatasource,
+  annotateTable, createDatasource, createFewShot as createFewShotApi, deleteFewShot as deleteFewShotApi,
+  getColumns, getConfigs, getDatasources, getFewShots, getMetrics, getPendingFeedbacks, getTables,
+  getUncaptured, patchConfig, reviewFeedback as reviewFeedbackApi, scanDatasource, testDatasource,
 } from '../api'
 
-type Tab = 'datasource' | 'schema' | 'metric' | 'config'
+type Tab = 'datasource' | 'schema' | 'metric' | 'config' | 'fewshot' | 'uncaptured'
 const tab = ref<Tab>('datasource')
 const msg = ref('')
 
@@ -27,13 +28,43 @@ const metricForm = ref({ name: '', code: '', description: '', unit: '' })
 // 配置
 const configs = ref<{ key: string; value: unknown; description: string | null }[]>([])
 
+// M2-T1：待审核反馈 / 样例库 / 未覆盖问题
+const feedbacks = ref<{ id: number; rating: string; correction_sql: string | null; comment: string | null }[]>([])
+const fewShots = ref<{ id: number; question: string; sql_text: string; status: number; hit_count: number }[]>([])
+const fewShotForm = ref({ question: '', sql_text: '', explanation: '' })
+const uncaptured = ref<{ items: { question: string; count: number; statuses: string[] }[]; total_uncovered: number }>()
+
 async function loadAll() {
   dss.value = await getDatasources()
   if (dss.value.length && !selectedDs.value) selectedDs.value = dss.value[0].id
   metrics.value = await getMetrics()
   configs.value = await getConfigs()
 }
-onMounted(loadAll)
+
+async function loadFewShots() {
+  const [{ getFewShots, getPendingFeedbacks, getUncaptured }] = await Promise.all([import('../api')])
+  fewShots.value = await getFewShots()
+  feedbacks.value = await getPendingFeedbacks()
+  uncaptured.value = await getUncaptured()
+}
+
+async function reviewFeedback(id: number, approve: boolean) {
+  await reviewFeedbackApi(id, approve)
+  msg.value = '已审核，采纳的纠错将自动转为样例'
+  await loadFewShots()
+}
+
+async function addFewShot() {
+  await createFewShotApi({ ...fewShotForm.value, datasource_id: selectedDs.value || null })
+  msg.value = '样例已录入（待审核），审核启用后参与召回'
+  fewShotForm.value = { question: '', sql_text: '', explanation: '' }
+  await loadFewShots()
+}
+
+async function delFewShot(id: number) {
+  await deleteFewShotApi(id)
+  await loadFewShots()
+}
 
 async function addDatasource() {
   msg.value = ''
@@ -89,6 +120,7 @@ async function saveConfig(c: { key: string; value: unknown }) {
       <button :class="{ on: tab === 'schema' }" @click="tab = 'schema'">表标注</button>
       <button :class="{ on: tab === 'metric' }" @click="tab = 'metric'">指标</button>
       <button :class="{ on: tab === 'config' }" @click="tab = 'config'">系统配置</button>
+      <button :class="{ on: tab === 'fewshot' }" @click="tab = 'fewshot'; loadFewShots()">样例库与反馈</button>
       <router-link to="/" class="back">返回对话</router-link>
     </nav>
     <p v-if="msg" class="msg">{{ msg }}</p>
@@ -172,6 +204,59 @@ async function saveConfig(c: { key: string; value: unknown }) {
         </tbody>
       </table>
     </section>
+
+    <!-- 样例库与反馈（M2-T1：FR-ADM-04、FR-UI-08、FR-ADM-08） -->
+    <section v-if="tab === 'fewshot'">
+      <h2>待审核纠错反馈</h2>
+      <table v-if="feedbacks.length">
+        <thead><tr><th>评分</th><th>正确 SQL</th><th>说明</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr v-for="f in feedbacks" :key="f.id">
+            <td>{{ f.rating }}</td>
+            <td><code>{{ f.correction_sql }}</code></td>
+            <td>{{ f.comment }}</td>
+            <td>
+              <button @click="reviewFeedback(f.id, true)">采纳（转样例）</button>
+              <button class="danger" @click="reviewFeedback(f.id, false)">驳回</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-else>暂无待审核反馈</p>
+
+      <h2>Few-shot 样例库</h2>
+      <form class="row" @submit.prevent="addFewShot">
+        <input v-model="fewShotForm.question" placeholder="问题" required />
+        <input v-model="fewShotForm.sql_text" placeholder="标准 SQL" required />
+        <input v-model="fewShotForm.explanation" placeholder="说明" />
+        <button type="submit">录入（待审核）</button>
+      </form>
+      <table>
+        <thead><tr><th>问题</th><th>SQL</th><th>状态</th><th>命中</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr v-for="s in fewShots" :key="s.id">
+            <td>{{ s.question }}</td>
+            <td><code>{{ s.sql_text.slice(0, 60) }}…</code></td>
+            <td>{{ s.status === 2 ? '待审核' : s.status === 1 ? '启用' : '停用' }}</td>
+            <td>{{ s.hit_count }}</td>
+            <td><button class="danger" @click="delFewShot(s.id)">删除</button></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>未覆盖问题（FR-ADM-08）</h2>
+      <p>累计未覆盖查询：{{ uncaptured?.total_uncovered ?? 0 }} 次，去重后 {{ uncaptured?.items.length ?? 0 }} 个问题</p>
+      <table v-if="uncaptured?.items.length">
+        <thead><tr><th>问题</th><th>次数</th><th>状态</th></tr></thead>
+        <tbody>
+          <tr v-for="(u, i) in uncaptured.items" :key="i">
+            <td>{{ u.question }}</td>
+            <td>{{ u.count }}</td>
+            <td>{{ u.statuses.join(' / ') }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
   </div>
 </template>
 
@@ -185,5 +270,7 @@ async function saveConfig(c: { key: string; value: unknown }) {
 .row button { padding: .45rem 1rem; background: #4169e1; color: #fff; border: 0; border-radius: 6px; cursor: pointer; }
 table { width: 100%; border-collapse: collapse; font-size: .85rem; margin-top: .8rem; }
 th, td { border: 1px solid #eee; padding: .45rem .7rem; text-align: left; }
+button { padding: .3rem .8rem; cursor: pointer; border: 1px solid #ddd; background: #fff; border-radius: 6px; }
+.danger { color: #d33; }
 .msg { padding: .6rem 1rem; background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 8px; }
 </style>

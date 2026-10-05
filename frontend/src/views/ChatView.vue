@@ -3,7 +3,7 @@
 import * as echarts from 'echarts'
 import { nextTick, onMounted, ref } from 'vue'
 import {
-  createConversation, currentUser, getConversations, getDatasources,
+  createConversation, createFeedback, currentUser, getConversations, getDatasources,
   getFollowups, streamQuery, type QueryEvent,
 } from '../api'
 
@@ -24,6 +24,9 @@ interface ChatMessage {
   errorCode?: number
   queryId?: number
   followups?: string[]
+  feedbackSent?: boolean
+  showCorrection?: boolean
+  correctionSql?: string
 }
 
 const conversations = ref<{ id: number; title: string }[]>([])
@@ -144,6 +147,18 @@ function renderChart(el: HTMLElement, msg: ChatMessage) {
   }
 }
 
+async function sendFeedback(msg: ChatMessage, rating: 'up' | 'down') {
+  if (!msg.queryId) return
+  try {
+    await createFeedback(msg.queryId, { rating, correction_sql: msg.correctionSql })
+    msg.feedbackSent = true
+    msg.showCorrection = false
+  } catch (e: unknown) {
+    const resp = (e as { response?: { data?: { message?: string } } }).response
+    alert(resp?.data?.message ?? '反馈提交失败')
+  }
+}
+
 function doLogout() {
   import('../api').then((m) => {
     m.logout()
@@ -234,6 +249,17 @@ function doLogout() {
           <div v-if="m.followups?.length" class="followups">
             <button v-for="f in m.followups" :key="f" :disabled="busy" @click="send(f)">{{ f }}</button>
           </div>
+
+          <!-- 反馈（FR-UI-08）：赞踩 + 纠错，进入样例库闭环 -->
+          <div v-if="m.queryId && !m.feedbackSent" class="feedback-bar">
+            <button @click="sendFeedback(m, 'up')">👍</button>
+            <button @click="m.showCorrection = !m.showCorrection">👎 纠错</button>
+            <span v-if="m.feedbackSent" class="fb-ok">反馈已提交，感谢！管理员审核后可用于改进回答。</span>
+          </div>
+          <div v-if="m.showCorrection && !m.feedbackSent" class="correction-box">
+            <textarea v-model="m.correctionSql" rows="3" placeholder="粘贴正确的 SQL…" />
+            <button @click="sendFeedback(m, 'down')">提交纠错</button>
+          </div>
         </div>
       </div>
     </main>
@@ -275,6 +301,12 @@ function doLogout() {
 .table-box table { border-collapse: collapse; font-size: .85rem; }
 .table-box th, .table-box td { border: 1px solid #eee; padding: .4rem .8rem; }
 .chart-reason { color: #999; font-size: .8rem; }
+.feedback-bar { margin-top: .6rem; display: flex; gap: .4rem; align-items: center; }
+.feedback-bar button { border: 1px solid #ddd; background: #fff; border-radius: 6px; padding: .2rem .6rem; cursor: pointer; }
+.fb-ok { color: #52c41a; font-size: .8rem; }
+.correction-box { margin-top: .6rem; display: flex; gap: .5rem; }
+.correction-box textarea { flex: 1; font-family: monospace; border: 1px solid #ddd; border-radius: 6px; }
+.correction-box button { align-self: flex-end; padding: .4rem .8rem; background: #4169e1; color: #fff; border: 0; border-radius: 6px; cursor: pointer; }
 .sql-details pre { background: #f6f8fa; padding: .8rem; border-radius: 8px; overflow-x: auto; }
 .input-bar { display: flex; gap: .6rem; padding: 1rem; border-top: 1px solid #e5e6eb; }
 .input-bar input { flex: 1; padding: .7rem 1rem; border: 1px solid #ddd; border-radius: 10px; }

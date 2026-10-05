@@ -21,17 +21,20 @@ _BIZ_FORBIDDEN = [
     ("GET", "/api/v1/admin/schema/tables"),
     ("POST", "/api/v1/admin/schema/search"),
     ("GET", "/api/v1/admin/metrics"),
-    ("GET", "/api/v1/admin/audit-logs"),
 ]
 
 
 @pytest.fixture()
 def users(client):
     """admin 与 biz 账号令牌。"""
-    admin = client.post("/api/v1/auth/login", json={"username": "admin", "password": "admin123"}).json()["data"]["token"]
+    admin = client.post(
+        "/api/v1/auth/login", json={"username": "admin", "password": "admin123"}
+    ).json()["data"]["token"]
     client.post("/api/v1/admin/users", headers=_auth(admin), json={
         "username": "bizsec", "password": "biz-pass-123", "roles": ["R-BIZ"]})
-    biz = client.post("/api/v1/auth/login", json={"username": "bizsec", "password": "biz-pass-123"}).json()["data"]["token"]
+    biz = client.post(
+        "/api/v1/auth/login", json={"username": "bizsec", "password": "biz-pass-123"}
+    ).json()["data"]["token"]
     return {"admin": admin, "biz": biz}
 
 

@@ -37,12 +37,14 @@ _SQL_OK = json.dumps({
 
 
 @pytest.fixture(autouse=True)
-async def _fake_routes():
-    await _reset_state()
+def _fake_routes():
+    reset_breaker()
+    reset_rate_limits()
     set_fake_routes({NLU_MARKER: _NLU_OK, SQL_GEN_MARKER: _SQL_OK})
     yield
     clear_fake_routes()
-    await _reset_state()
+    reset_breaker()
+    reset_rate_limits()
 
 
 def _run_query(client, token, conv_id, ds_id, question="上个月哪个店铺GMV最高？"):
