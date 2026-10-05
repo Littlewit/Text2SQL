@@ -6,6 +6,7 @@
 
 from functools import lru_cache
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -38,7 +39,10 @@ class Settings(BaseSettings):
     login_lockout_threshold: int = 5  # 登录失败锁定阈值，P-32 待定
 
     # --- LLM（DeepSeek，Q-07 确认前默认云端 API）---
-    llm_api_key: str = ""  # 仅环境变量注入，禁止写入代码仓库（KEY-01）
+    # 密钥仅环境变量注入（KEY-01），优先读 DEEPSEEK_API_KEY，兼容 LLM_API_KEY
+    llm_api_key: str = Field(
+        default="", validation_alias=AliasChoices("DEEPSEEK_API_KEY", "LLM_API_KEY")
+    )
     llm_base_url: str = "https://api.deepseek.com/v1"
     llm_model: str = "deepseek-flash"  # DeepSeek Flash（用户指定，2026-10）
     llm_timeout_s: float = 30.0

@@ -14,7 +14,10 @@ import pytest
 # - 固定 SECRET_KEY 使令牌测试可复现
 os.environ.setdefault("METADATA_DB_URL", "postgresql+psycopg://test:test@localhost:54399/test")
 os.environ.setdefault("SECRET_KEY", "test-secret")
-os.environ.setdefault("LLM_API_KEY", "test-key")
+# 强制走 FakeLLM 替身：即使本机配了 DEEPSEEK_API_KEY/LLM_API_KEY 也禁用真实调用
+# （避免测试产生真实 API 计费与不确定性；AliasChoices 下置空串即视为未配置）
+os.environ["DEEPSEEK_API_KEY"] = ""
+os.environ["LLM_API_KEY"] = ""
 
 
 @pytest.fixture

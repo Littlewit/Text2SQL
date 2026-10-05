@@ -61,9 +61,11 @@ def migrated(test_db_url):
 @pytest.fixture()
 def client(migrated):
     """每个测试一个全新引擎与 TestClient（同一事件循环上下文）。"""
-    # LLM_API_KEY 置空 → get_llm() 返回 FakeLLM（单测 conftest 注入了假 key，此处覆盖）
+    # LLM 密钥置空 → get_llm() 返回 FakeLLM（即使本机配置了 DEEPSEEK_API_KEY 也强制替身，
+    # 避免集成测试产生真实 API 调用；AliasChoices 下置空串即视为未配置）
     os.environ["METADATA_DB_URL"] = migrated
     os.environ["SECRET_KEY"] = "test-secret"
+    os.environ["DEEPSEEK_API_KEY"] = ""
     os.environ["LLM_API_KEY"] = ""
 
     from app.core.config import get_settings
