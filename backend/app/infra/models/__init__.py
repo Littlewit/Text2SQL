@@ -7,6 +7,7 @@ from app.infra.models.audit import AuditLog
 from app.infra.models.base import Base
 from app.infra.models.config import SysConfig
 from app.infra.models.datasource import Datasource
+from app.infra.models.favorite import Favorite, Share, ShareAccess
 from app.infra.models.query import Conversation, FewShot, Message, QueryHistory, RowPolicy
 from app.infra.models.schema_meta import (
     ColumnMeta,
@@ -28,6 +29,7 @@ __all__ = [
     "DataScope",
     "Datasource",
     "EnumDict",
+    "Favorite",
     "FewShot",
     "JoinPath",
     "Message",
@@ -36,6 +38,10 @@ __all__ = [
     "QueryHistory",
     "Role",
     "RowPolicy",
+    "SchemaEmbedding",
+    "Share",
+    "ShareAccess",
+    "Synonym",
     "SchemaEmbedding",
     "Synonym",
     "SysConfig",
