@@ -51,8 +51,13 @@ async def recall_few_shots(
 
 
 def render_schema_fragment(tables: list[TableMeta], columns: dict[int, list[ColumnMeta]],
-                           enums: dict[int, list[EnumDict]]) -> str:
-    """把检索命中的表/字段/枚举渲染为 Prompt 片段（含业务标注，FR-SCH-10）。"""
+                           enums: dict[int, list[EnumDict]],
+                           join_paths: list[tuple[str, str, str, str]] | None = None) -> str:
+    """把检索命中的表/字段/枚举渲染为 Prompt 片段（含业务标注，FR-SCH-10）。
+
+    join_paths: [(左表名, 左列, 右表名, 右列)]——显式关联关系注入（FR-SCH-14），
+    多表查询必须按此关联，杜绝笛卡尔积（R-06）。
+    """
     blocks = []
     for tm in tables:
         lines = [f"表: {tm.schema_name}.{tm.table_name}（{tm.cn_name or ''}） {tm.description or ''}".rstrip()]
@@ -68,6 +73,10 @@ def render_schema_fragment(tables: list[TableMeta], columns: dict[int, list[Colu
             for e in enums.get(cm.id, []):
                 lines.append(f"    · 取值 {e.raw_value} = {e.display_name}")
         blocks.append("\n".join(lines))
+
+    if join_paths:
+        rels = "\n".join(f"  - {lt}.{lc} = {rt}.{rc}" for lt, lc, rt, rc in join_paths)
+        blocks.append(f"【表关联关系（多表查询必须使用，禁止笛卡尔积）】\n{rels}")
     return "\n\n".join(blocks)
 
 

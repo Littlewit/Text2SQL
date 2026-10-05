@@ -3,7 +3,7 @@
 import asyncio
 import json
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -191,4 +191,72 @@ async def list_history(
              "duration_ms": h.duration_ms, "created_at": str(h.created_at)}
             for h in items
         ],
+    })
+
+
+@router.delete("/history/{query_id}")
+async def delete_history(
+    query_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """删除历史（FR-HIS-09：逻辑删除；审计日志不受影响，DR-06）。"""
+    h = await db.get(QueryHistory, query_id)
+    if h is None or h.user_id != user.id:
+        raise AppError(40400, "查询记录不存在", 404)
+    h.is_deleted = True
+    await db.commit()
+    return ok({"deleted": True})
+
+
+# ---------- M2-T2：手工 SQL 执行 / 结果分页（FR-SQL-32/22）----------
+class ExecuteSqlRequest(BaseModel):
+    sql: str = Field(min_length=1, max_length=8000)
+    datasource_id: int
+
+
+@router.post("/query/execute-sql")
+async def execute_sql(
+    body: ExecuteSqlRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """执行用户手工编辑的 SQL（FR-SQL-32）：完整校验 + 权限改写 + 只读执行，同权同责。"""
+    await check_query_allowed(user.id)
+    from app.services.manual_sql_service import execute_manual_sql
+
+    result = await execute_manual_sql(db, user, body.datasource_id, body.sql)
+    return ok(result)
+
+
+@router.get("/query/{query_id}/rows")
+async def query_rows(
+    query_id: int,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=100, ge=1, le=1000),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """结果分页取数（FR-SQL-22）：优先读进程内缓存（翻页零查询），回退历史样例。"""
+    from app.core.result_cache import get as cache_get
+
+    cached = cache_get(query_id)
+    if cached:
+        rows = cached["rows"]
+        start = (page - 1) * page_size
+        return ok({
+            "columns": cached["columns"], "rows": rows[start:start + page_size],
+            "total": len(rows), "truncated": cached.get("truncated", False), "source": "cache",
+        })
+
+    h = await db.get(QueryHistory, query_id)
+    if h is None or h.user_id != user.id or h.exec_status != "success":
+        raise AppError(40400, "查询记录不存在或未成功", 404)
+    sample = h.result_sample or {}
+    rows = sample.get("rows", [])
+    start = (page - 1) * page_size
+    return ok({
+        "columns": sample.get("columns", []), "rows": rows[start:start + page_size],
+        "total": h.row_count or len(rows), "truncated": sample.get("truncated", False),
+        "source": "history_sample",  # 完整结果不留存（DR-02），样例仅前 N 行
     })

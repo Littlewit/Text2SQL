@@ -36,6 +36,7 @@ async def scan_datasource(db: AsyncSession, ds_id: int, operator_id: int) -> dic
         # connect_timeout 为 libpq 参数，须置于连接串内（psycopg 无 timeout 关键字参数）
         async with await psycopg.AsyncConnection.connect(f"{conninfo} connect_timeout=10") as conn:
             physical = await _introspect(conn)
+            physical["indexes"] = await _introspect_indexes(conn)
             stats = await _merge_scan_results(db, ds_id, physical)
             await _sample_enum_values(conn, db, ds_id)  # 低基数采样，用扫描连接（FR-SCH-05）
     except psycopg.OperationalError as e:
@@ -107,12 +108,27 @@ async def _introspect(conn) -> dict:
 
     return {"tables": tables, "columns": columns, "pks": pks, "fks": fks}
 
-    return {
-        "tables": [tuple(r) for r in tables],
-        "columns": [tuple(r) for r in columns],
-        "pks": {(r[0], r[1], r[2]) for r in pks},
-        "fks": {(r[0], r[1], r[2]): f"{r[3]}.{r[4]}" for r in fks},
-    }
+
+async def _introspect_indexes(conn) -> dict[str, list[dict]]:
+    """采集索引（FR-SQL-21 数据来源）：{表名: [{name, columns: [...]}]}。
+
+    列名从 indexdef 末尾括号内提取；表达式索引保留原始表达式串。
+    """
+    cur = await conn.execute(
+        """
+        SELECT schemaname, tablename, indexname, indexdef
+        FROM pg_indexes
+        WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
+        """
+    )
+    result: dict[str, list[dict]] = {}
+    for _, table, indexname, indexdef in await cur.fetchall():
+        cols: list[str] = []
+        if "(" in indexdef:
+            paren = indexdef[indexdef.rindex("("):].strip("() ")
+            cols = [c.strip().strip('"').lower() for c in paren.split(",")]
+        result.setdefault(table.lower(), []).append({"name": indexname, "columns": cols})
+    return result
 
 
 async def _merge_scan_results(db: AsyncSession, ds_id: int, physical: dict) -> dict:
@@ -138,6 +154,7 @@ async def _merge_scan_results(db: AsyncSession, ds_id: int, physical: dict) -> d
 
         tm.row_estimate = row_estimate
         tm.scan_at = now
+        tm.indexes = physical["indexes"].get(table_name.lower(), [])  # 索引元数据（FR-SQL-21）
         # 原生注释仅作标注兜底（缺失时填充），已有业务标注不被覆盖
         if comment and not tm.description:
             tm.description = comment

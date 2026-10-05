@@ -125,7 +125,8 @@ async def run_query(
 
     # ---------- 阶段 3~5：Prompt → 生成 → 校验（含自愈重试）----------
     await emit("stage", {"stage": "generating_sql", "message": "生成 SQL 中"})
-    schema_fragment, metrics_fragment = await _render_context(db, recalled, nlu)
+    join_paths = await _load_join_paths(db, datasource_id)
+    schema_fragment, metrics_fragment = await _render_context(db, recalled, nlu, join_paths)
     few_shots = await recall_few_shots_safe(db, question, datasource_id)
     await fewshot_service.increment_hit_counts(db, [fs.id for fs in few_shots])  # FR-ADM-04 效果统计
 
@@ -239,6 +240,11 @@ async def run_query(
     await db.commit()
     QUERIES.labels("success").inc()
     LLM_TOKENS.inc(total_tokens)
+    # 结果缓存供分页取数（FR-SQL-22）：仅脱敏后数据，10 分钟 TTL
+    from app.core.result_cache import put as cache_put
+
+    cache_put(history.id, {"columns": result.columns, "rows": masked_rows,
+                           "truncated": result.truncated})
     await _add_message_ref(db, conversation_id, history.id)
     await emit("result", {"columns": result.columns, "rows": masked_rows, "row_count": result.row_count,
                           "truncated": result.truncated, "duration_ms": result.duration_ms})
@@ -262,8 +268,9 @@ def _context_summary(ctx: dict | None) -> str | None:
     return "；".join(parts) or None
 
 
-async def _render_context(db: AsyncSession, recalled, nlu: NluResult):
-    """按检索结果渲染 Schema 片段与指标口径片段（只注入命中对象，FR-NLU-22）。"""
+async def _render_context(db: AsyncSession, recalled, nlu: NluResult,
+                          join_paths: list[tuple[str, str, str, str]] | None = None):
+    """按检索结果渲染 Schema 片段（含关联关系 FR-SCH-14）与指标口径片段（FR-NLU-22）。"""
 
     table_ids = {r.object_id for r in recalled if r.object_type == "table"}
     col_ids = {r.object_id for r in recalled if r.object_type == "column"}
@@ -299,13 +306,35 @@ async def _render_context(db: AsyncSession, recalled, nlu: NluResult):
             )
         ).scalars()
     )
-    schema_fragment = render_schema_fragment(tables, columns, enums)
+    schema_fragment = render_schema_fragment(tables, columns, enums, join_paths)
     metrics_fragment = render_metrics(metrics)
     return schema_fragment, metrics_fragment
 
 
+async def _load_join_paths(db: AsyncSession, datasource_id: int) -> list[tuple[str, str, str, str]]:
+    """加载已维护的表关联关系，注入 Prompt（FR-SCH-14：多表查询杜绝笛卡尔积）。"""
+    from app.infra.models import JoinPath
+
+    paths = (
+        (await db.execute(select(JoinPath).where(JoinPath.datasource_id == datasource_id))).scalars().all()
+    )
+    if not paths:
+        return []
+    table_ids = {p.left_table_id for p in paths} | {p.right_table_id for p in paths}
+    names = {
+        t.id: t.table_name
+        for t in (await db.execute(select(TableMeta).where(TableMeta.id.in_(table_ids)))).scalars()
+    }
+    result = []
+    for p in paths:
+        lt, rt = names.get(p.left_table_id), names.get(p.right_table_id)
+        if lt and rt:
+            result.append((lt, p.left_column, rt, p.right_column))
+    return result
+
+
 async def _guard_context(db: AsyncSession, datasource_id: int, row_limit: int) -> GuardContext:
-    """构建白名单上下文：仅 included 表进入（FR-SCH-03）。"""
+    """构建校验上下文：白名单表（FR-SCH-03）+ 可配置黑名单（FR-SQL-16）+ 索引列（FR-SQL-21）。"""
     tables = (
         (
             await db.execute(
@@ -318,12 +347,26 @@ async def _guard_context(db: AsyncSession, datasource_id: int, row_limit: int) -
         .all()
     )
     allowed: dict[str, set[str]] = {}
+    indexed: set[str] = set()
     for tm in tables:
         cols = (
             await db.execute(select(ColumnMeta.column_name).where(ColumnMeta.table_meta_id == tm.id))
         ).scalars()
         allowed[tm.table_name.lower()] = {c.lower() for c in cols}
-    return GuardContext(allowed_tables=allowed, row_limit=row_limit)
+        # 索引首列集合（FR-SQL-21 提示来源）
+        for idx in (tm.indexes or []):
+            idx_cols = idx.get("columns") or []
+            if idx_cols and isinstance(idx_cols[0], str):
+                indexed.add(idx_cols[0].lower())
+    blocked_fns = await get_config_value(db, "guard.blocked_functions", None)
+    blocked_sch = await get_config_value(db, "guard.blocked_schemas", None)
+    return GuardContext(
+        allowed_tables=allowed,
+        row_limit=row_limit,
+        blocked_functions=set(blocked_fns) if blocked_fns else None,
+        blocked_schemas=set(blocked_sch) if blocked_sch else None,
+        indexed_columns=indexed or None,
+    )
 
 
 async def _column_meta_map(db: AsyncSession, datasource_id: int, columns: list[str]) -> dict[str, bool]:

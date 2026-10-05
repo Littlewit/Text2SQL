@@ -38,6 +38,7 @@ class TableMeta(IntPkMixin, Base):
     row_estimate: Mapped[int] = mapped_column(BigInteger, default=0)
     included: Mapped[bool] = mapped_column(Boolean, default=False)  # 白名单纳入
     annotation_score: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))  # 完整度（FR-SCH-15）
+    indexes: Mapped[dict | list | None] = mapped_column(JSON)  # 索引元数据 [{name, columns}]（FR-SQL-21）
     scan_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     columns: Mapped[list["ColumnMeta"]] = relationship(

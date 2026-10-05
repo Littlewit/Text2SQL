@@ -35,17 +35,33 @@ class GuardResult:
     ok: bool
     ast: exp.Expression | None = None
     errors: list[GuardError] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)  # 非阻断提示（如索引失效风险，FR-SQL-21）
     # perf 阶段可能改写 AST（展开 * / 注入 LIMIT），改写后的 SQL 由此返回
     rewritten_sql: str | None = None
 
 
 @dataclass
 class GuardContext:
-    """校验上下文：表白名单 → 字段集合（均小写），及行数上限。"""
+    """校验上下文：表白名单 → 字段集合（均小写），及行数上限。
+
+    黑名单与索引列支持配置化注入（FR-SQL-16 / FR-SQL-21）；
+    缺省时使用模块内置基线（BLOCKED_FUNCTIONS / BLOCKED_SCHEMAS）。
+    """
 
     allowed_tables: dict[str, set[str]]  # {"orders": {"id", "shop_id", ...}}
     row_limit: int
     dialect: str = "postgres"
+    blocked_functions: set[str] | None = None
+    blocked_schemas: set[str] | None = None
+    indexed_columns: set[str] | None = None  # 建立索引的首列（小写）
+
+    @property
+    def functions(self) -> set[str]:
+        return self.blocked_functions if self.blocked_functions is not None else BLOCKED_FUNCTIONS
+
+    @property
+    def schemas(self) -> set[str]:
+        return self.blocked_schemas if self.blocked_schemas is not None else BLOCKED_SCHEMAS
 
 
 def validate(sql: str, ctx: GuardContext) -> tuple[GuardResult, list[GuardError]]:
@@ -71,8 +87,8 @@ def validate(sql: str, ctx: GuardContext) -> tuple[GuardResult, list[GuardError]
         result.errors.append(err)
         return result, [err]
 
-    # 阶段 3：敏感操作识别（FR-SQL-13）
-    err = _check_sensitive(result.ast)
+    # 阶段 3：敏感操作识别（FR-SQL-13，黑名单可配置 FR-SQL-16）
+    err = _check_sensitive(result.ast, ctx)
     if err:
         result.errors.append(err)
         return result, [err]
@@ -84,7 +100,7 @@ def validate(sql: str, ctx: GuardContext) -> tuple[GuardResult, list[GuardError]
         return result, [err]
 
     # 阶段 5：性能守卫（FR-SQL-14）——展开 * / 校验 JOIN / 注入 LIMIT（可能改写 AST）
-    errs = _perf_guard(result.ast, ctx)
+    errs = _perf_guard(result.ast, ctx, result)
     if errs:
         result.errors.extend(errs)
         return result, errs
@@ -107,12 +123,14 @@ def _check_statement_type(ast: exp.Expression) -> GuardError | None:
     return None
 
 
-def _check_sensitive(ast: exp.Expression) -> GuardError | None:
-    """危险函数与系统 schema/对象访问拦截（FR-SQL-13）。"""
+def _check_sensitive(ast: exp.Expression, ctx: GuardContext) -> GuardError | None:
+    """危险函数与系统 schema/对象访问拦截（FR-SQL-13，黑名单可配置 FR-SQL-16）。"""
+    blocked_fns = ctx.functions
+    blocked_sch = ctx.schemas
     for func in ast.find_all(exp.Anonymous, exp.Func):
         name = (getattr(func, "this", None) or "").lower() if isinstance(func, exp.Anonymous) else \
                func.sql_name().lower().replace("(", "")
-        if name in BLOCKED_FUNCTIONS:
+        if name in blocked_fns:
             return GuardError("sensitive", 40302, f"函数 {name} 被禁止", "移除该函数后重试")
     # 系统信息函数（sqlglot 解析为专用节点而非 Anonymous，按版本安全枚举）
     system_nodes = [getattr(exp, n) for n in
@@ -123,11 +141,11 @@ def _check_sensitive(ast: exp.Expression) -> GuardError | None:
             return GuardError("sensitive", 40302,
                               f"系统函数 {type(node).__name__} 被禁止", "只允许查询业务数据")
     for table in ast.find_all(exp.Table):
-        if (table.db or "").lower() in BLOCKED_SCHEMAS or (table.catalog or "").lower() in BLOCKED_SCHEMAS:
+        if (table.db or "").lower() in blocked_sch or (table.catalog or "").lower() in blocked_sch:
             return GuardError("sensitive", 40302,
                               f"禁止访问系统对象 {table.name}", "只允许访问白名单业务表")
         # pg_* 系统对象可省略 schema 前缀，按名称前缀拦截
-        if table.name.lower() in BLOCKED_SCHEMAS or table.name.lower().startswith("pg_"):
+        if table.name.lower() in blocked_sch or table.name.lower().startswith("pg_"):
             return GuardError("sensitive", 40302,
                               f"禁止访问系统对象 {table.name}", "只允许访问白名单业务表")
     return None
@@ -175,8 +193,8 @@ def _builtin_names() -> set[str]:
     return {"*", "row_number", "rank", "dense_rank", "lag", "lead", "ntile"}
 
 
-def _perf_guard(ast: exp.Expression, ctx: GuardContext) -> list[GuardError]:
-    """性能守卫（FR-SQL-14）：原地改写 AST。
+def _perf_guard(ast: exp.Expression, ctx: GuardContext, result: GuardResult) -> list[GuardError]:
+    """性能守卫（FR-SQL-14）：原地改写 AST；非阻断提示写入 result.warnings（FR-SQL-21）。
 
     1. SELECT * 自动展开为白名单列；
     2. 多表 JOIN 必须带 ON 条件（拒绝笛卡尔积）；
@@ -230,5 +248,20 @@ def _perf_guard(ast: exp.Expression, ctx: GuardContext) -> list[GuardError]:
             current = ctx.row_limit
         if current > ctx.row_limit:
             ast.set("limit", exp.Limit(expression=exp.Literal.number(str(ctx.row_limit))))
+
+    # 4. 索引友好提示（FR-SQL-21，非阻断）：比较谓词左值为「函数包裹的索引列」时提示索引失效风险
+    if ctx.indexed_columns:
+        for binary in ast.find_all(exp.Binary):
+            if not isinstance(binary, (exp.EQ, exp.LT, exp.GTE, exp.GT, exp.NEQ, exp.LTE)):
+                continue
+            left = binary.this
+            if isinstance(left, exp.Func) and not isinstance(left, exp.Paren):
+                for col in left.find_all(exp.Column):
+                    if col.name.lower() in ctx.indexed_columns:
+                        warning = (f"字段 {col.name} 建有索引，但被函数 "
+                                   f"{left.sql_name()} 包裹会导致索引失效，建议改写为范围比较")
+                        if warning not in result.warnings:
+                            result.warnings.append(warning)
+                        break
 
     return errors
