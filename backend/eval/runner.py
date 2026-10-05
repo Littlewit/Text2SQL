@@ -13,7 +13,26 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 OFFLINE_KINDS = {"time_parse", "guard_reject", "guard_pass"}
-LLM_KINDS = {"sql_exec", "refused", "clarify", "intent"}
+LLM_KINDS = {"sql_exec", "refused", "clarify", "intent", "recall"}
+
+# demo_business 全部物理表（召回评测从 standard_sql 提取目标表的词表）
+_PHYSICAL_TABLES = ("orders", "shop", "product", "order_item", "return_order")
+
+
+def _derive_recall_cases(cases: list[dict]) -> list[dict]:
+    """从 EX 用例派生召回评测（NFR-A-04）：standard_sql 中引用的表须被检索 top-k 命中。"""
+    import re
+
+    derived = []
+    for c in cases:
+        if c["kind"] != "sql_exec":
+            continue
+        sql = c["expected"]["standard_sql"].lower()
+        targets = [t for t in _PHYSICAL_TABLES if re.search(rf"\b{t}\b", sql)]
+        derived.append({**c, "id": c["id"] + "R", "kind": "recall",
+                        "tag": "recall_" + c["tag"].replace("ex_", ""),
+                        "expected": {"target_tables": targets}})
+    return derived
 
 
 @dataclass
@@ -56,13 +75,19 @@ def _record(report: EvalReport, case: dict, ok: bool, detail: str = "") -> None:
         stat["passed"] += 1
 
 
-def run_eval(cases: list[dict], offline_only: bool = False, limit: int | None = None) -> EvalReport:
-    """执行评测。offline_only=True 仅跑离线类别（CI 门禁模式）。"""
+def run_eval(cases: list[dict], offline_only: bool = False, limit: int | None = None,
+             kinds: set[str] | None = None) -> EvalReport:
+    """执行评测。offline_only=True 仅跑离线类别（CI 门禁模式）；kinds 指定类别过滤。"""
     report = EvalReport()
     start = time.monotonic()
 
-    llm_available = bool(os.environ.get("LLM_API_KEY"))
+    # 密钥别名兼容：DEEPSEEK_API_KEY（优先）或 LLM_API_KEY 任一存在即可跑 LLM 类别
+    llm_available = bool(os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("LLM_API_KEY"))
+    # 召回用例从 EX 用例派生（目标表 = standard_sql 引用的物理表）
+    cases = cases + _derive_recall_cases(cases)
     selected = [c for c in cases if not offline_only or c["kind"] in OFFLINE_KINDS]
+    if kinds:
+        selected = [c for c in selected if c["kind"] in kinds]
     if limit:
         selected = selected[:limit]
 
@@ -80,6 +105,8 @@ def run_eval(cases: list[dict], offline_only: bool = False, limit: int | None = 
                     report.skipped += 1
                 elif kind == "sql_exec":
                     _run_sql_exec(case, report)
+                elif kind == "recall":
+                    _run_recall(case, report)
                 else:
                     _run_nlu_case(case, report)
         except Exception as e:  # noqa: BLE001 —— 单用例异常记失败，不中断评测
@@ -124,7 +151,11 @@ def _run_guard(case: dict, report: EvalReport) -> None:
 
 
 def _run_sql_exec(case: dict, report: EvalReport) -> None:
-    """EX 评测（NFR-A-01）：生成 SQL 与标准 SQL 执行结果集比对（排序归一）。"""
+    """EX 评测（NFR-A-01）：生成 SQL 与标准 SQL 执行结果比对。
+
+    判定采用「行数相等 + 值多重集包含」：标准行的值都出现在某个生成行中即可。
+    容忍模型多 SELECT 标识列（如 id），但不容忍聚合值/行数差异。
+    """
     import psycopg
 
     from eval.ex_utils import eval_connection_info, run_text2sql
@@ -140,22 +171,41 @@ def _run_sql_exec(case: dict, report: EvalReport) -> None:
     with psycopg.connect(conninfo, connect_timeout=5) as conn:
         def rows(sql: str):
             cur = conn.execute(sql)
-            return sorted(map(repr, cur.fetchall()))
+            return [frozenset(map(repr, r)) for r in cur.fetchall()]
 
-        actual = rows(generated_sql)
-        expected = rows(case["expected"]["standard_sql"])
+        actual, expected = rows(generated_sql), rows(case["expected"]["standard_sql"])
 
-    _record(report, case, actual == expected,
-            f"结果集不一致：生成 {len(actual)} 行 vs 标准 {len(expected)} 行")
+    if len(actual) != len(expected):
+        _record(report, case, False,
+                f"行数不一致：生成 {len(actual)} 行 vs 标准 {len(expected)} 行")
+        return
+    # 每个标准行的值集合须被某个生成行覆盖（贪心匹配即可，集合无重复值）
+    remaining = list(actual)
+    for want in expected:
+        for i, got in enumerate(remaining):
+            if want <= got:
+                remaining.pop(i)
+                break
+        else:
+            _record(report, case, False,
+                    f"结果值不一致：标准行 {sorted(want)[:4]} 未被生成结果覆盖")
+            return
+    _record(report, case, True)
+
+
+def _run_recall(case: dict, report: EvalReport) -> None:
+    """召回评测（NFR-A-04）：检索 top-k 必须命中 standard_sql 引用的全部物理表。"""
+    from eval.ex_utils import eval_recall
+
+    hit, detail = eval_recall(case["question"], case["expected"]["target_tables"])
+    _record(report, case, hit, detail)
 
 
 def _run_nlu_case(case: dict, report: EvalReport) -> None:
     """refused / clarify / intent 评测：仅 NLU 阶段（无需执行 SQL）。"""
-    import asyncio
-
     from eval.ex_utils import eval_nlu_only
 
-    result = asyncio.run(eval_nlu_only(case["question"]))
+    result = eval_nlu_only(case["question"])  # 同步封装（内部已处理事件循环）
     kind = case["kind"]
     if kind == "refused":
         _record(report, case, result.out_of_scope, f"期望拒答，实际 intent={result.intent}")

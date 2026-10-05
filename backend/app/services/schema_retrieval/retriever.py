@@ -17,6 +17,8 @@ from app.services.schema_retrieval.hybrid_scorer import (
     keyword_score,
 )
 
+TABLE_QUOTA = 6  # 检索结果中保底入选的表数量（P-39 待定）
+
 
 def tokenize(query: str) -> list[str]:
     """中文分词的轻量替代：按标点/空白切分后取 2-gram + 原词。
@@ -115,11 +117,75 @@ async def search(
                 keyword_score=kw,
             )
 
+    # 2.5) 表对象全量入候选池：表是 Prompt 渲染的骨架（按 table_ids 取表结构），
+    # 不应因向量截断或关键词未命中而缺席；其排名由融合分+聚合加分决定。
+    all_tables = (
+        await db.execute(
+            text("SELECT id FROM table_meta WHERE (:ds_id IS NULL OR datasource_id = :ds_id)"),
+            {"ds_id": datasource_id},
+        )
+    ).fetchall()
+    for r in all_tables:
+        candidates.setdefault(
+            ("table", r.id),
+            Candidate(object_type="table", object_id=r.id, content_text=""),
+        )
+
     for c in candidates.values():
         c.score = fuse_scores(c.vector_sim, c.keyword_score, vector_weight, keyword_weight)
 
+    # 4) 表聚合加分（FR-SCH-22 增强）：同表字段或指标公式命中说明表高度相关，
+    #    给表本身叠加 bonus，避免「店铺GMV」只召回字段而丢掉 orders/shop 表。
+    owner_rows = (
+        await db.execute(
+            text(
+                """
+                SELECT cm.id AS col_id, tm.id AS table_id, tm.table_name,
+                       tm.datasource_id AS ds_id
+                FROM column_meta cm
+                JOIN table_meta tm ON tm.id = cm.table_meta_id
+                """
+            )
+        )
+    ).fetchall()
+    metric_rows = (
+        (await db.execute(text("SELECT id, formula, datasource_id FROM metric"))).fetchall()
+    )
+    col_owner = {r.col_id: (r.table_id, r.table_name, r.ds_id) for r in owner_rows}
+    bonus: dict[int, float] = {}  # table_id → bonus
+    for c in candidates.values():
+        if c.object_type == "column" and c.object_id in col_owner:
+            tid, tname, ds_id = col_owner[c.object_id]
+            if datasource_id is None or ds_id in (None, datasource_id):
+                bonus[tid] = max(bonus.get(tid, 0.0), c.score * 0.5)
+    for m in metric_rows:
+        mc = candidates.get(("metric", m.id))
+        if mc is None or (datasource_id is not None and m.datasource_id not in (None, datasource_id)):
+            continue
+        # 指标公式中引用的表（如 SUM(orders.amount) → orders）
+        expr = str((m.formula or {}).get("expr", "")).lower()
+        for r in owner_rows:
+            if r.table_name.lower() in expr:
+                bonus[r.table_id] = max(bonus.get(r.table_id, 0.0), mc.score * 0.5)
+
+    for c in candidates.values():
+        if c.object_type == "table":
+            c.score = min(c.score + bonus.get(c.object_id, 0.0), 1.0)
+
     ranked = sorted(candidates.values(), key=lambda c: c.score, reverse=True)
-    return ranked[:top_k]
+
+    # 5) 表配额保底（链路正确性）：Prompt 按 table_ids 渲染表结构，表缺失则其字段
+    #    无从展示；且小库场景全表上下文成本低。规则：得分最高的前 TABLE_QUOTA 张表
+    #    强制入选，其余名额按综合分排序（大库时配额可经参数暴露调整，P-39 待定）。
+    tables_in = [c for c in ranked if c.object_type == "table"]
+    others = [c for c in ranked if c.object_type != "table"]
+    quota = min(TABLE_QUOTA, len(tables_in))
+    picked = list(tables_in[:quota])
+    for c in others + tables_in[quota:]:
+        if len(picked) >= top_k:
+            break
+        picked.append(c)
+    return picked[:top_k]
 
 
 def to_explainable(results: list[Candidate]) -> list[dict]:

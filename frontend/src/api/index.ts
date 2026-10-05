@@ -136,6 +136,13 @@ export const getOpsDashboard = (days: number) =>
   http.get('/admin/ops/dashboard', { params: { days } }).then((r) => r.data.data)
 export const runOpsCleanup = (dryRun: boolean) =>
   http.post('/admin/ops/cleanup', { dry_run: dryRun }).then((r) => r.data.data)
+// M2-T6：评测管理
+export const runEval = (mode: 'offline' | 'full') =>
+  http.post('/admin/ops/eval/run', { mode }).then((r) => r.data.data)
+export const getEvalReports = () =>
+  http.get('/admin/ops/eval/reports').then((r) => r.data.data)
+export const getEvalCompare = (a: number, b: number) =>
+  http.get('/admin/ops/eval/compare', { params: { a, b } }).then((r) => r.data.data)
 // M2-T3：行级权限策略
 export const getRowPolicies = (dsId?: number) =>
   http.get('/admin/row-policies', { params: dsId ? { datasource_id: dsId } : {} }).then((r) => r.data.data)

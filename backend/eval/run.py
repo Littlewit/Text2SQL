@@ -25,12 +25,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Text2SQL 评测")
     parser.add_argument("--offline", action="store_true", help="仅跑离线类别（CI 门禁）")
     parser.add_argument("--limit", type=int, default=None, help="限制用例数（冒烟）")
+    parser.add_argument("--kinds", type=str, default=None,
+                        help="逗号分隔的类别过滤（如 sql_exec,recall），与 --offline 互斥")
     parser.add_argument("--gate", action="store_true", help="启用门禁判定（非 0 退出码）")
     parser.add_argument("--threshold", type=float, default=0.05, help="相对基线下降阈值（P-56，默认 5%%）")
     args = parser.parse_args()
 
     cases = load_cases()
-    report = run_eval(cases, offline_only=args.offline, limit=args.limit)
+    report = run_eval(cases, offline_only=args.offline, limit=args.limit,
+                      kinds=set(args.kinds.split(",")) if args.kinds else None)
 
     REPORT_FILE.write_text(json.dumps(report.to_dict(), ensure_ascii=False, indent=1), encoding="utf-8")
 

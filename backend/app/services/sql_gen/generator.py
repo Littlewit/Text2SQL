@@ -28,6 +28,11 @@ class OutputParseError(Exception):
 def parse_llm_output(raw: str) -> GeneratedSQL:
     """解析 LLM 输出：优先 JSON（可能被 markdown 包裹），否则提取 SQL 代码块。"""
     text = raw.strip()
+    # DeepSeek Flash 偶发把整段输出包成 JSON 字符串字面量（外层成对引号），先剥离
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
+        inner = text[1:-1].strip()
+        if inner:
+            text = inner
 
     # 1) 剥离 markdown 代码块后尝试 JSON
     fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.S)
@@ -51,6 +56,14 @@ def parse_llm_output(raw: str) -> GeneratedSQL:
                 )
         except (json.JSONDecodeError, AttributeError, TypeError, ValueError):
             continue
+
+    # 1.5) JSON 被截断时的兜底：直接正则提取 "sql" 字段值（容忍转义引号）
+    sql_field = re.search(r'"sql"\s*:\s*"((?:[^"\\]|\\.)*)"', text, re.S)
+    if sql_field:
+        sql = sql_field.group(1).replace('\\"', '"').replace("\\'", "'").strip()
+        if sql and _is_single_statement(sql):
+            return GeneratedSQL(sql=sql, confidence=0.5,
+                                explain="（JSON 输出被截断，仅提取 SQL 字段）")
 
     # 2) 无 JSON：从 ```sql 块提取
     sql_block = re.search(r"```(?:sql)?\s*(.+?)\s*```", text, re.S)

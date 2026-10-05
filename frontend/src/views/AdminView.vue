@@ -3,12 +3,12 @@
 import { onMounted, ref } from 'vue'
 import {
   annotateTable, createDatasource, createFewShot as createFewShotApi, deleteFewShot as deleteFewShotApi,
-  getColumns, getConfigs, getDatasources, getFewShots, getMetrics, getOpsDashboard, getPendingFeedbacks,
-  getTables, getUncaptured, patchConfig, reviewFeedback as reviewFeedbackApi, runOpsCleanup,
-  scanDatasource, testDatasource,
+  getColumns, getConfigs, getDatasources, getEvalCompare, getEvalReports, getFewShots, getMetrics,
+  getOpsDashboard, getPendingFeedbacks, getTables, getUncaptured, patchConfig,
+  reviewFeedback as reviewFeedbackApi, runEval, runOpsCleanup, scanDatasource, testDatasource,
 } from '../api'
 
-type Tab = 'datasource' | 'schema' | 'metric' | 'config' | 'fewshot' | 'uncaptured' | 'rowpolicy' | 'ops'
+type Tab = 'datasource' | 'schema' | 'metric' | 'config' | 'fewshot' | 'uncaptured' | 'rowpolicy' | 'ops' | 'eval'
 const tab = ref<Tab>('datasource')
 const msg = ref('')
 
@@ -37,6 +37,62 @@ async function runCleanup() {
     const real = await runOpsCleanup(false)
     cleanupMsg.value = `已清理审计 ${real.audit_to_delete} 条、历史 ${real.history_to_delete} 条`
   } catch { cleanupMsg.value = '清理失败（仅管理员）' }
+}
+
+// 评测管理（FR-ADM-07，M2-T6）
+interface EvalRun { id: number; mode: string; status: string; total: number; passed: number; failed: number; skipped: number; pass_rate: number; model_version: string | null; created_at: string }
+interface CmpResult {
+  a: { id: number; pass_rate: number; created_at: string }
+  b: { id: number; pass_rate: number; created_at: string }
+  overall_diff: number
+  by_tag: Record<string, { a: number; b: number; diff: number }>
+}
+const evalReports = ref<EvalRun[]>([])
+const evalMsg = ref('')
+const cmpB = ref(0)
+const cmpResult = ref<CmpResult | null>(null)
+const detailTags = ref<Record<string, { total: number; passed: number }> | null>(null)
+const detailId = ref(0)
+
+async function loadEvalReports() {
+  try {
+    evalReports.value = await getEvalReports()
+  } catch { /* 无权限静默 */ }
+}
+
+async function triggerEval(mode: 'offline' | 'full') {
+  try {
+    if (!confirm(mode === 'full' ? '全量评测将调用真实 LLM（产生费用、耗时数分钟），继续？' : '触发离线评测？')) return
+    const { run_id } = await runEval(mode)
+    evalMsg.value = `评测 #${run_id} 已启动，列表将自动刷新…`
+    // 轮询刷新列表直到该任务完成
+    const timer = setInterval(async () => {
+      await loadEvalReports()
+      const run = evalReports.value.find((r) => r.id === run_id)
+      if (run && run.status !== 'running') {
+        clearInterval(timer)
+        evalMsg.value = `评测 #${run_id} ${run.status === 'done' ? '完成' : '失败'}：通过率 ${(run.pass_rate * 100).toFixed(1)}%`
+      }
+    }, 3000)
+  } catch (e: unknown) {
+    evalMsg.value = `触发失败：${(e as Error).message}`
+  }
+}
+
+function sign(v: number): string {
+  return (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%'
+}
+
+async function doCompare(a: number) {
+  try {
+    cmpResult.value = await getEvalCompare(a, cmpB.value)
+  } catch { evalMsg.value = '对比失败' }
+}
+
+async function evalDetail(id: number) {
+  const d = await import('../api').then((m) => m.http.get(`/admin/ops/eval/reports/${id}`).then((r) => r.data.data))
+  detailId.value = id
+  detailTags.value = d.by_tag ?? {}
 }
 
 // 数据源
@@ -174,6 +230,7 @@ async function saveConfig(c: { key: string; value: unknown }) {
       <button :class="{ on: tab === 'fewshot' }" @click="tab = 'fewshot'; loadFewShots()">样例库与反馈</button>
       <button :class="{ on: tab === 'rowpolicy' }" @click="tab = 'rowpolicy'; loadFewShots()">行级权限</button>
       <button :class="{ on: tab === 'ops' }" @click="tab = 'ops'; loadDashboard()">运营看板</button>
+      <button :class="{ on: tab === 'eval' }" @click="tab = 'eval'; loadEvalReports()">评测</button>
       <router-link to="/" class="back">返回对话</router-link>
     </nav>
     <p v-if="msg" class="msg">{{ msg }}</p>
@@ -221,7 +278,63 @@ async function saveConfig(c: { key: string; value: unknown }) {
       </div>
     </section>
 
-    <!-- 数据源 -->
+    <!-- 评测管理（FR-ADM-07，M2-T6） -->
+    <section v-if="tab === 'eval'">
+      <h2>评测管理</h2>
+      <div class="ops-tools">
+        <button @click="triggerEval('offline')">跑离线评测（安全/时间解析，秒级）</button>
+        <button @click="triggerEval('full')">跑全量评测（含真实 LLM，数分钟）</button>
+        <select v-model="cmpB">
+          <option :value="0" disabled>对比基线…</option>
+          <option v-for="r in evalReports.filter((x) => x.status === 'done')" :key="r.id" :value="r.id">#{{ r.id }} ({{ (r.pass_rate * 100).toFixed(1) }}%)</option>
+        </select>
+      </div>
+      <p v-if="evalMsg" class="cleanup-msg">{{ evalMsg }}</p>
+      <table>
+        <thead><tr><th>ID</th><th>模式</th><th>状态</th><th>总数</th><th>通过</th><th>失败</th><th>跳过</th><th>通过率</th><th>模型</th><th>时间</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr v-for="r in evalReports" :key="r.id">
+            <td>#{{ r.id }}</td>
+            <td>{{ r.mode }}</td>
+            <td>{{ r.status }}</td>
+            <td>{{ r.total }}</td>
+            <td>{{ r.passed }}</td>
+            <td>{{ r.failed }}</td>
+            <td>{{ r.skipped }}</td>
+            <td><b>{{ (r.pass_rate * 100).toFixed(1) }}%</b></td>
+            <td>{{ r.model_version || '-' }}</td>
+            <td>{{ r.created_at?.slice(0, 19) }}</td>
+            <td>
+              <button v-if="cmpB && cmpB !== r.id" @click="doCompare(r.id)">与 #{{ cmpB }} 对比</button>
+              <button @click="evalDetail(r.id)">详情</button>
+            </td>
+          </tr>
+          <tr v-if="!evalReports.length"><td colspan="11">暂无评测记录，点击上方按钮触发</td></tr>
+        </tbody>
+      </table>
+      <!-- 分维度对比结果（EV-05） -->
+      <div v-if="cmpResult" class="shares">
+        <h3>对比：#{{ cmpResult.b.id }} vs #{{ cmpResult.a.id }}（整体 {{ sign(cmpResult.overall_diff) }}）</h3>
+        <table>
+          <thead><tr><th>维度</th><th>基准通过率</th><th>对比通过率</th><th>变化</th></tr></thead>
+          <tbody>
+            <tr v-for="(v, tag) in cmpResult.by_tag" :key="tag">
+              <td>{{ tag }}</td>
+              <td>{{ (v.a * 100).toFixed(1) }}%</td>
+              <td>{{ (v.b * 100).toFixed(1) }}%</td>
+              <td :class="v.diff >= 0 ? 'success' : 'failed'">{{ sign(v.diff) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <!-- 分维度详情 -->
+      <div v-if="detailTags" class="shares">
+        <h3>报告 #{{ detailId }} 分维度明细</h3>
+        <ul class="kv">
+          <li v-for="(v, tag) in detailTags" :key="tag">{{ tag }}：{{ v.passed }}/{{ v.total }}（{{ ((v.passed / v.total) * 100).toFixed(1) }}%）</li>
+        </ul>
+      </div>
+    </section>
     <section v-if="tab === 'datasource'">
       <h2>数据源接入</h2>
       <form class="row" @submit.prevent="addDatasource">

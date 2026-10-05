@@ -7,6 +7,7 @@ from app.infra.models.audit import AuditLog
 from app.infra.models.base import Base
 from app.infra.models.config import SysConfig
 from app.infra.models.datasource import Datasource
+from app.infra.models.eval_report import EvalReportRun
 from app.infra.models.favorite import Favorite, Share, ShareAccess
 from app.infra.models.feedback import Feedback
 from app.infra.models.query import Conversation, FewShot, Message, QueryHistory, RowPolicy
@@ -30,6 +31,7 @@ __all__ = [
     "DataScope",
     "Datasource",
     "EnumDict",
+    "EvalReportRun",
     "Favorite",
     "Feedback",
     "FewShot",
@@ -43,8 +45,6 @@ __all__ = [
     "SchemaEmbedding",
     "Share",
     "ShareAccess",
-    "Synonym",
-    "SchemaEmbedding",
     "Synonym",
     "SysConfig",
     "TableMeta",

@@ -42,10 +42,10 @@ jobs:
           pip install -e ".[dev]"
       - name: Lint (ruff)
         run: ruff check .
-      - name: Unit tests
-        run: pytest -m "not integration" -q
-      - name: Integration tests
-        run: pytest -m integration -q
+      - name: Unit tests (coverage collect)
+        run: pytest -m "not integration" -q --cov=app --cov-report=term --cov-append
+      - name: Integration tests (coverage gate >=70%, P-54)
+        run: pytest -m integration -q --cov=app --cov-report=term --cov-append --cov-fail-under=70
       - name: Eval offline gate（EV-04：安全与时间解析用例 100% 门禁）
         run: python -m eval.run --offline --gate
 

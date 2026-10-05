@@ -32,6 +32,38 @@ def eval_nlu_only(question: str):
     return asyncio_run(_run())
 
 
+def eval_recall(question: str, target_tables: list[str]) -> tuple[bool, str]:
+    """召回评测（NFR-A-04）：检索 top-10 须命中目标表集合。
+
+    返回 (是否全命中, 明细说明)；供评测报告展示未命中的目标表。
+    """
+    from app.core.config import get_settings
+    from app.infra.db import get_session_factory, reset_engine
+    from app.infra.models import Datasource, TableMeta
+    from app.services.schema_retrieval.retriever import search
+
+    get_settings.cache_clear()
+    reset_engine()
+
+    async def _run():
+        async with get_session_factory()() as db:
+            ds = (await db.execute(
+                select(Datasource).where(Datasource.db_name == "demo_business")
+            )).scalars().first()
+            recalled = await search(db, _embedder(), question, ds.id if ds else None, top_k=10)
+            table_ids = {r.object_id for r in recalled if r.object_type == "table"}
+            names = set((await db.execute(
+                select(TableMeta.table_name).where(TableMeta.id.in_(table_ids or {0}))
+            )).scalars().all())
+            return names
+
+    recalled_tables = asyncio_run(_run())
+    missing = [t for t in target_tables if t not in recalled_tables]
+    if not missing:
+        return True, f"命中 {sorted(recalled_tables)}"
+    return False, f"未命中: {missing}（实际召回 {sorted(recalled_tables)}）"
+
+
 def run_text2sql(question: str, datasource_name: str) -> str | None:
     """完整链路：NLU → 检索 → Prompt → 生成 → sql_guard（含白名单），返回最终 SQL。
 
