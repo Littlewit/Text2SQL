@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     # --- LLM（DeepSeek，Q-07 确认前默认云端 API）---
     llm_api_key: str = ""  # 仅环境变量注入，禁止写入代码仓库（KEY-01）
     llm_base_url: str = "https://api.deepseek.com/v1"
-    llm_model: str = "deepseek-chat"
+    llm_model: str = "deepseek-flash"  # DeepSeek Flash（用户指定，2026-10）
     llm_timeout_s: float = 30.0
 
     # --- Embedding（维度须与模型一致，DR-04）---
