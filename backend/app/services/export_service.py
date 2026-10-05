@@ -1,7 +1,9 @@
-"""导出服务（FR-VIS-20/23）：Excel 导出，复用已脱敏的结果样例。
+"""导出服务（FR-VIS-20/23/24、M2-T4）：Excel / PDF 审计，复用已脱敏结果。
 
-数据来源是 query_history.result_sample——已在查询链路服务端出口脱敏（FR-SEC-22），
-因此导出文件天然无明文敏感值；导出行为本身记录审计（FR-VIS-23）。
+数据来源优先级：进程内结果缓存（完整脱敏结果，查询后 10 分钟内）→
+query_history.result_sample（前 N 行样例）。
+导出行数上限（FR-VIS-24）读 sys_config：超限需用户显式确认（confirmed=true），
+且导出行为必须留审计（FR-VIS-23）。
 """
 
 import io
@@ -11,19 +13,44 @@ from openpyxl import Workbook
 from openpyxl.styles import Font
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.deps import get_config_value
 from app.core.errors import AppError
 from app.infra.models import QueryHistory
 from app.services import audit_service
 
 
-async def export_query_excel(db: AsyncSession, history: QueryHistory, operator_id: int) -> bytes:
-    """把查询结果导出为 Excel：数据表 + 元信息（问题/SQL/口径声明）。"""
+async def _export_rows(db: AsyncSession, history: QueryHistory) -> list[list]:
+    """取导出数据行：优先结果缓存（完整脱敏结果），回退历史样例（DR-02）。"""
+    from app.core.result_cache import get as cache_get
+
+    cached = cache_get(history.id)
+    if cached is not None:
+        return cached["rows"]
+    return (history.result_sample or {}).get("rows", [])
+
+
+async def export_query_excel(
+    db: AsyncSession, history: QueryHistory, operator_id: int, confirmed: bool = False
+) -> bytes:
+    """把查询结果导出为 Excel：数据表 + 元信息（问题/SQL/口径声明）。
+
+    FR-VIS-24：行数超过 export.max_rows（sys_config，默认 1000）时
+    需 confirmed=true 显式确认，否则 409 提示行数——防止误操作拉全量。
+    """
     if history is None or history.exec_status != "success":
         raise AppError(40400, "仅成功的查询可导出", 404)
-    sample = history.result_sample or {}
-    columns: list[str] = sample.get("columns", [])
-    rows: list[list] = sample.get("rows", [])
-    truncated: bool = sample.get("truncated", False)
+
+    max_rows = await get_config_value(db, "export.max_rows", 1000)
+    rows = await _export_rows(db, history)
+    if len(rows) > max_rows and not confirmed:
+        raise AppError(
+            40902,
+            f"本次导出共 {len(rows)} 行，超过上限 {max_rows}，请确认后重试",
+            409,
+        )
+
+    columns: list[str] = (history.result_sample or {}).get("columns", [])
+    truncated: bool = (history.result_sample or {}).get("truncated", False)
 
     wb = Workbook()
     ws = wb.active
@@ -38,7 +65,7 @@ async def export_query_excel(db: AsyncSession, history: QueryHistory, operator_i
         ws.append(["SQL 解释", history.explain_text])
     ws.append([])
 
-    # 数据表区
+    # 数据表区（列头取自结果样例，行数据来自缓存/样例）
     ws.append(columns)
     for cell in ws[ws.max_row]:
         cell.font = meta_font
@@ -55,7 +82,7 @@ async def export_query_excel(db: AsyncSession, history: QueryHistory, operator_i
     await audit_service.record(
         db, user_id=operator_id, action="export.excel",
         object_type="query_history", object_id=str(history.id),
-        detail={"rows": len(rows), "truncated": truncated},
+        detail={"rows": len(rows), "truncated": truncated, "confirmed": confirmed},
     )
     await db.commit()
     return content

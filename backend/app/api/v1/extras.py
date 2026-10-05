@@ -175,25 +175,110 @@ async def revoke_share(
     return ok({"revoked": True})
 
 
-# ==================== 导出（FR-VIS-20/23） ====================
+# ==================== 导出（FR-VIS-20/23/24） ====================
 @router.post("/query/{query_id}/export")
 async def export_query(
     query_id: int,
+    confirmed: bool = Query(default=False, description="FR-VIS-24：行数超限时需显式确认"),
     format: str = Query(default="xlsx", pattern="^(xlsx)$"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    """导出 Excel：数据已在查询链路服务端脱敏（FR-SEC-22），导出记录审计（FR-VIS-23）。"""
+    """导出 Excel：数据已在查询链路服务端脱敏（FR-SEC-22），导出记录审计（FR-VIS-23）。
+
+    行数超过 export.max_rows 时需 confirmed=true（FR-VIS-24）。
+    """
     history = await db.get(QueryHistory, query_id)
     if history is None or history.user_id != user.id:
         raise AppError(40400, "查询记录不存在", 404)
-    content = await export_service.export_query_excel(db, history, user.id)
+    content = await export_service.export_query_excel(db, history, user.id, confirmed)
     filename = f"query_{query_id}_{datetime.now():%Y%m%d%H%M%S}.xlsx"
     return Response(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.post("/query/{query_id}/export/pdf")
+async def export_query_pdf(
+    query_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """PDF 导出（FR-VIS-21）：由前端浏览器打印生成，服务端记录审计。
+
+    （设计：FR-VIS-21 的 PDF 走前端打印通道；服务端负责审计留痕，
+    数据本身来自已脱敏的结果缓存/样例，无明文敏感值外泄。）
+    """
+    from app.services import audit_service
+
+    h = await db.get(QueryHistory, query_id)
+    if h is None or h.user_id != user.id:
+        raise AppError(40400, "查询记录不存在", 404)
+    await audit_service.record(
+        db, user_id=user.id, action="export.pdf",
+        object_type="query_history", object_id=str(query_id),
+    )
+    await db.commit()
+    return ok({"audit": True})
+
+
+@router.get("/history/{query_id}")
+async def history_detail(
+    query_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """历史详情（FR-HIS-01）：SQL/解释/假设/召回明细，仅本人可见。"""
+    h = await db.get(QueryHistory, query_id)
+    if h is None or h.user_id != user.id:
+        raise AppError(40400, "查询记录不存在", 404)
+    return ok({
+        "id": h.id, "question": h.question, "intent": h.intent,
+        "exec_status": h.exec_status, "row_count": h.row_count,
+        "generated_sql": h.generated_sql, "explain_text": h.explain_text,
+        "assumptions": h.assumptions, "validate_result": h.validate_result,
+        "recalled_schema": h.recalled_schema,
+        "prompt_template_version": h.prompt_template_version,
+        "retry_count": h.retry_count, "duration_ms": h.duration_ms,
+        "chart_config": h.chart_config, "result_sample": h.result_sample,
+    })
+
+
+# ==================== 图表一键切换（FR-VIS-03/04，M2-T4） ====================
+class ChartSwitchRequest(BaseModel):
+    chart_type: str = Field(pattern="^(line|bar|pie|table)$")
+
+
+@router.post("/query/{query_id}/chart")
+async def switch_chart(
+    query_id: int,
+    body: ChartSwitchRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """图表一键切换（FR-VIS-03/04）：复用缓存/样例数据重建 option，零请求重查。"""
+    from app.core.result_cache import get as cache_get
+    from app.services.visualization.recommender import build_chart_option
+
+    cached = cache_get(query_id)
+    if cached is not None:
+        columns, rows = cached["columns"], cached["rows"]
+        source = "cache"
+    else:
+        h = await db.get(QueryHistory, query_id)
+        if h is None or h.user_id != user.id or h.exec_status != "success":
+            raise AppError(40400, "查询记录不存在或未成功", 404)
+        sample = h.result_sample or {}
+        columns, rows = sample.get("columns", []), sample.get("rows", [])
+        source = "history_sample"
+
+    if not rows:
+        return ok({"chart_type": "empty", "reason": "无数据可绘制", "option": None, "source": source})
+    option = build_chart_option(body.chart_type, columns, rows)
+    reason = f"已切换为 {body.chart_type}（数据源：{source}，零请求重查）"
+    return ok({"chart_type": body.chart_type, "reason": reason, "option": option, "source": source})
 
 
 # ==================== 建议追问（FR-UI-04） ====================

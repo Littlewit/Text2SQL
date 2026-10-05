@@ -122,6 +122,15 @@ export const reviewFewShot = (id: number, approve: boolean) =>
   http.post(`/admin/few-shots/${id}/review?approve=${approve}`).then((r) => r.data.data)
 export const deleteFewShot = (id: number) => http.delete(`/admin/few-shots/${id}`).then((r) => r.data)
 export const getUncaptured = () => http.get('/admin/uncaptured').then((r) => r.data.data)
+// M2-T4：图表切换 / 历史详情 / PDF / 分享管理
+export const switchChart = (queryId: number, chartType: string) =>
+  http.post(`/query/${queryId}/chart`, { chart_type: chartType }).then((r) => r.data.data)
+export const getHistoryDetail = (queryId: number) =>
+  http.get(`/history/${queryId}`).then((r) => r.data.data)
+export const auditPdfExport = (queryId: number) =>
+  http.post(`/query/${queryId}/export/pdf`).then((r) => r.data)
+export const getMyShares = () => http.get('/my-shares').then((r) => r.data.data)
+export const revokeShare = (id: number) => http.delete(`/shares/${id}`).then((r) => r.data)
 // M2-T3：行级权限策略
 export const getRowPolicies = (dsId?: number) =>
   http.get('/admin/row-policies', { params: dsId ? { datasource_id: dsId } : {} }).then((r) => r.data.data)

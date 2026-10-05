@@ -3,8 +3,8 @@
 import * as echarts from 'echarts'
 import { nextTick, onMounted, ref } from 'vue'
 import {
-  createConversation, createFeedback, currentUser, getConversations, getDatasources,
-  getFollowups, streamQuery, type QueryEvent,
+  auditPdfExport, createConversation, createFeedback, currentUser, getConversations, getDatasources,
+  getFollowups, streamQuery, switchChart, type QueryEvent,
 } from '../api'
 
 interface ChatMessage {
@@ -27,6 +27,7 @@ interface ChatMessage {
   feedbackSent?: boolean
   showCorrection?: boolean
   correctionSql?: string
+  pdfDone?: boolean
 }
 
 const conversations = ref<{ id: number; title: string }[]>([])
@@ -147,6 +148,35 @@ function renderChart(el: HTMLElement, msg: ChatMessage) {
   }
 }
 
+// 图表一键切换（FR-VIS-03/04）：服务端基于缓存数据重建 option，零请求重查
+async function switchChartType(msg: ChatMessage, chartType: string) {
+  if (!msg.queryId) return
+  try {
+    const r = await switchChart(msg.queryId, chartType)
+    msg.chartType = r.chart_type
+    msg.chartOption = r.option
+    msg.chartReason = r.reason
+    await nextTick()
+    scrollBottom()
+  } catch { /* 切换失败保留当前图 */ }
+}
+
+// PDF 导出（FR-VIS-21）：先记录服务端审计，再触发浏览器打印
+async function exportPdf(msg: ChatMessage) {
+  if (!msg.queryId) return
+  try {
+    await auditPdfExport(msg.queryId)
+    msg.pdfDone = true
+    window.print()
+  } catch { /* 审计失败不阻断打印 */ }
+}
+
+// 单位格式化（FR-VIS-05）：数值千分位，其余原样
+function formatValue(v: unknown): string {
+  if (typeof v === 'number') return v.toLocaleString('zh-CN')
+  return v === null || v === undefined ? '-' : String(v)
+}
+
 async function sendFeedback(msg: ChatMessage, rating: 'up' | 'down') {
   if (!msg.queryId) return
   try {
@@ -228,11 +258,20 @@ function doLogout() {
 
           <!-- 四要素：结论 + 图表/表格 + SQL 解释（UX-02） -->
           <div v-if="m.chartType" class="result-area">
+            <!-- 图表一键切换（FR-VIS-03/04）：复用缓存结果，零请求重查 -->
+            <div v-if="m.queryId && m.chartType !== 'empty'" class="chart-switch">
+              <button v-for="t in ['line', 'bar', 'pie', 'table']" :key="t"
+                      :class="{ on: m.chartType === t }" @click="switchChartType(m, t)">
+                {{ { line: '折线', bar: '柱状', pie: '饼图', table: '表格' }[t as 'line'] }}
+              </button>
+              <button v-if="!m.pdfDone" @click="exportPdf(m)">打印/PDF</button>
+              <span v-if="m.pdfDone" class="fb-ok">已记录导出审计</span>
+            </div>
             <div v-if="m.chartType === 'empty'" class="empty-card">查询成功但无匹配数据</div>
             <div v-else-if="m.chartType === 'table'" class="table-box">
               <table>
                 <thead><tr><th v-for="c in m.columns" :key="c">{{ c }}</th></tr></thead>
-                <tbody><tr v-for="(r, ri) in m.rows" :key="ri"><td v-for="(v, vi) in r" :key="vi">{{ v ?? '-' }}</td></tr></tbody>
+                <tbody><tr v-for="(r, ri) in m.rows" :key="ri"><td v-for="(v, vi) in r" :key="vi">{{ formatValue(v) }}</td></tr></tbody>
               </table>
             </div>
             <div v-else class="chart-box" :ref="(el) => renderChart(el as HTMLElement, m)" />
@@ -300,6 +339,9 @@ function doLogout() {
 .table-box { overflow-x: auto; }
 .table-box table { border-collapse: collapse; font-size: .85rem; }
 .table-box th, .table-box td { border: 1px solid #eee; padding: .4rem .8rem; }
+.chart-switch { display: flex; gap: .3rem; margin-bottom: .5rem; }
+.chart-switch button { border: 1px solid #ddd; background: #fff; border-radius: 6px; padding: .2rem .6rem; cursor: pointer; font-size: .8rem; }
+.chart-switch button.on { background: #4169e1; color: #fff; border-color: #4169e1; }
 .chart-reason { color: #999; font-size: .8rem; }
 .feedback-bar { margin-top: .6rem; display: flex; gap: .4rem; align-items: center; }
 .feedback-bar button { border: 1px solid #ddd; background: #fff; border-radius: 6px; padding: .2rem .6rem; cursor: pointer; }
