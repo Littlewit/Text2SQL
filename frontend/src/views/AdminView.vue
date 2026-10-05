@@ -3,13 +3,41 @@
 import { onMounted, ref } from 'vue'
 import {
   annotateTable, createDatasource, createFewShot as createFewShotApi, deleteFewShot as deleteFewShotApi,
-  getColumns, getConfigs, getDatasources, getFewShots, getMetrics, getPendingFeedbacks, getTables,
-  getUncaptured, patchConfig, reviewFeedback as reviewFeedbackApi, scanDatasource, testDatasource,
+  getColumns, getConfigs, getDatasources, getFewShots, getMetrics, getOpsDashboard, getPendingFeedbacks,
+  getTables, getUncaptured, patchConfig, reviewFeedback as reviewFeedbackApi, runOpsCleanup,
+  scanDatasource, testDatasource,
 } from '../api'
 
-type Tab = 'datasource' | 'schema' | 'metric' | 'config' | 'fewshot' | 'uncaptured' | 'rowpolicy'
+type Tab = 'datasource' | 'schema' | 'metric' | 'config' | 'fewshot' | 'uncaptured' | 'rowpolicy' | 'ops'
 const tab = ref<Tab>('datasource')
 const msg = ref('')
+
+// 运营看板（FR-ADM-06，M2-T5）
+interface Dash {
+  summary: { total: number; success_rate: number; avg_duration_ms: number; retry_rate: number; clarify: number; refused: number; llm_tokens: number }
+  duration_buckets: Record<string, number>
+  top_questions: [string, number][]
+  top_failures: [string, number][]
+}
+const dash = ref<Dash | null>(null)
+const dashboardDays = ref(7)
+const cleanupMsg = ref('')
+
+async function loadDashboard() {
+  try {
+    dash.value = await getOpsDashboard(dashboardDays.value)
+    cleanupMsg.value = ''
+  } catch { /* 无权限或网络错误时静默 */ }
+}
+
+async function runCleanup() {
+  try {
+    const dry = await runOpsCleanup(true)
+    if (!confirm(`预检：审计 ${dry.audit_to_delete} 条、历史 ${dry.history_to_delete} 条将被清理，确认执行？`)) return
+    const real = await runOpsCleanup(false)
+    cleanupMsg.value = `已清理审计 ${real.audit_to_delete} 条、历史 ${real.history_to_delete} 条`
+  } catch { cleanupMsg.value = '清理失败（仅管理员）' }
+}
 
 // 数据源
 const dss = ref<{ id: number; name: string; host: string; db_name: string; status: number }[]>([])
@@ -145,9 +173,53 @@ async function saveConfig(c: { key: string; value: unknown }) {
       <button :class="{ on: tab === 'config' }" @click="tab = 'config'">系统配置</button>
       <button :class="{ on: tab === 'fewshot' }" @click="tab = 'fewshot'; loadFewShots()">样例库与反馈</button>
       <button :class="{ on: tab === 'rowpolicy' }" @click="tab = 'rowpolicy'; loadFewShots()">行级权限</button>
+      <button :class="{ on: tab === 'ops' }" @click="tab = 'ops'; loadDashboard()">运营看板</button>
       <router-link to="/" class="back">返回对话</router-link>
     </nav>
     <p v-if="msg" class="msg">{{ msg }}</p>
+
+    <!-- 运营看板（FR-ADM-06，M2-T5） -->
+    <section v-if="tab === 'ops'">
+      <h2>运营看板（近 {{ dashboardDays }} 天）</h2>
+      <div class="ops-tools">
+        <select v-model.number="dashboardDays" @change="loadDashboard()">
+          <option :value="1">近 1 天</option>
+          <option :value="7">近 7 天</option>
+          <option :value="30">近 30 天</option>
+        </select>
+        <button @click="runCleanup">清理超期审计/历史（先预检）</button>
+        <span v-if="cleanupMsg" class="cleanup-msg">{{ cleanupMsg }}</span>
+      </div>
+      <div v-if="dash" class="cards">
+        <div class="card"><b>{{ dash.summary.total }}</b><span>查询总量</span></div>
+        <div class="card"><b>{{ (dash.summary.success_rate * 100).toFixed(1) }}%</b><span>成功率</span></div>
+        <div class="card"><b>{{ dash.summary.avg_duration_ms }}ms</b><span>平均耗时</span></div>
+        <div class="card"><b>{{ (dash.summary.retry_rate * 100).toFixed(1) }}%</b><span>自愈重试率</span></div>
+        <div class="card"><b>{{ dash.summary.clarify }}</b><span>澄清次数</span></div>
+        <div class="card"><b>{{ dash.summary.refused }}</b><span>拒答次数</span></div>
+        <div class="card"><b>{{ dash.summary.llm_tokens.toLocaleString() }}</b><span>Token 用量</span></div>
+      </div>
+      <div v-if="dash" class="cols">
+        <div>
+          <h3>耗时分布</h3>
+          <ul class="kv">
+            <li v-for="(v, k) in dash.duration_buckets" :key="k">{{ k }}：<b>{{ v }}</b></li>
+          </ul>
+          <h3>Top 失败原因（错误码）</h3>
+          <ul class="kv">
+            <li v-for="f in dash.top_failures" :key="f[0]">错误码 {{ f[0] }}：<b>{{ f[1] }}</b> 次</li>
+            <li v-if="!dash.top_failures.length">无失败记录</li>
+          </ul>
+        </div>
+        <div>
+          <h3>高频问题 Top 10</h3>
+          <ol class="kv">
+            <li v-for="q in dash.top_questions" :key="q[0]">{{ q[0] }}（{{ q[1] }} 次）</li>
+            <li v-if="!dash.top_questions.length">暂无查询</li>
+          </ol>
+        </div>
+      </div>
+    </section>
 
     <!-- 数据源 -->
     <section v-if="tab === 'datasource'">
@@ -316,6 +388,15 @@ async function saveConfig(c: { key: string; value: unknown }) {
 </template>
 
 <style scoped>
+.ops-tools { display: flex; gap: .6rem; align-items: center; margin-bottom: .8rem; }
+.cleanup-msg { color: #52c41a; font-size: .85rem; }
+.cards { display: flex; gap: .6rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.card { background: #fafbfc; border: 1px solid #eee; border-radius: 10px; padding: .7rem 1.1rem; text-align: center; }
+.card b { display: block; font-size: 1.3rem; }
+.card span { color: #888; font-size: .75rem; }
+.cols { display: flex; gap: 2rem; }
+.cols > div { flex: 1; }
+.kv { font-size: .85rem; line-height: 1.7; }
 .page { padding: 1.5rem; max-width: 960px; margin: 0 auto; }
 .tabs { display: flex; gap: .5rem; margin-bottom: 1rem; align-items: center; }
 .tabs button, .tabs .back { padding: .4rem 1rem; border: 1px solid #ddd; background: #fff; border-radius: 8px; cursor: pointer; }

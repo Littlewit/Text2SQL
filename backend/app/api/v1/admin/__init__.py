@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.admin import audit, configs, datasources, schema_meta, taxonomy, users
+from app.api.v1.admin import audit, configs, datasources, ops, schema_meta, taxonomy, users
 
 admin_router = APIRouter()
 admin_router.include_router(users.router)
@@ -11,3 +11,4 @@ admin_router.include_router(configs.router)
 admin_router.include_router(audit.router)
 admin_router.include_router(schema_meta.router)
 admin_router.include_router(taxonomy.router)
+admin_router.include_router(ops.router)

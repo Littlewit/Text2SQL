@@ -11,6 +11,7 @@ from collections.abc import Awaitable, Callable
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import quota
 from app.core.deps import get_config_value
 from app.core.errors import AppError
 from app.core.obs import LLM_TOKENS, QUERIES, RETRIES
@@ -75,6 +76,15 @@ async def run_query(
     row_limit = await get_config_value(db, "query.row_limit", 1000)
     timeout_s = await get_config_value(db, "query.timeout_s", 30)
 
+    # 每日配额前置校验（FR-SEC-33）：任一维度超限直接 429
+    await quota.check_quota(
+        user.id,
+        await get_config_value(db, "quota.user_daily_queries", 0),
+        await get_config_value(db, "quota.global_daily_queries", 0),
+        await get_config_value(db, "quota.user_daily_tokens", 0),
+        await get_config_value(db, "quota.global_daily_tokens", 0),
+    )
+
     history = QueryHistory(
         conversation_id=conversation_id, user_id=user.id, question=question,
         datasource_id=datasource_id, exec_status="failed",
@@ -108,7 +118,7 @@ async def run_query(
     except Exception as e:  # LLM 故障转可读错误（NFR-R-02）
         raise AppError(50002, "AI 服务暂时不可用，请稍后重试", 503) from e
 
-    history.entities = {"intent": nlu.intent, "raw": nlu.raw}
+    history.entities = {"intent": nlu.intent, "raw": nlu.raw, "aggregations": nlu.aggregations}
     history.intent = nlu.intent
 
     if nlu.out_of_scope:  # 越界拒答（FR-NLU-03）：不生成任何 SQL
@@ -117,6 +127,14 @@ async def run_query(
     if nlu.clarify_question:  # 澄清短路（FR-NLU-02）
         return await _clarify(db, history, conversation_id, question,
                               nlu.clarify_question, nlu.clarify_options, emit, started)
+    # 低置信度澄清（FR-NLU-17）：LLM 自评确信度低于阈值时反问，不强行生成
+    clarify_threshold = await get_config_value(db, "nlu.clarify_threshold", 0.6)
+    if nlu.confidence < float(clarify_threshold):
+        return await _clarify(
+            db, history, conversation_id, question,
+            "我不太确定您想查什么，请补充说明指标（如 GMV、订单量）或时间范围",
+            [], emit, started,
+        )
 
     # ---------- 阶段 2：Schema 检索 ----------
     await emit("stage", {"stage": "retrieving_schema", "message": "检索相关表结构"})
@@ -240,6 +258,7 @@ async def run_query(
     await db.commit()
     QUERIES.labels("success").inc()
     LLM_TOKENS.inc(total_tokens)
+    await quota.record_usage(user.id, total_tokens)  # 配额用量累计（FR-SEC-33）
     # 结果缓存供分页取数（FR-SQL-22）：仅脱敏后数据，10 分钟 TTL
     from app.core.result_cache import put as cache_put
 
@@ -287,7 +306,11 @@ async def _render_context(db: AsyncSession, recalled, nlu: NluResult,
         cm_rows = (
             await db.execute(select(ColumnMeta).where(ColumnMeta.table_meta_id == tm.id))
         ).scalars().all()
-        columns[tm.id] = [c for c in cm_rows if not (set(c.hidden_roles or []) & user_roles)]
+        columns[tm.id] = [
+            c for c in cm_rows
+            if not c.missing  # FR-SCH-04：已删除字段不进 Prompt
+            and not (set(c.hidden_roles or []) & user_roles)
+        ]
         for cm in columns[tm.id]:
             e_rows = (
                 await db.execute(select(EnumDict).where(EnumDict.column_meta_id == cm.id))
@@ -359,7 +382,8 @@ async def _guard_context(db: AsyncSession, datasource_id: int, row_limit: int,
         ).scalars()
         allowed[tm.table_name.lower()] = {
             c.column_name.lower() for c in cols
-            if not (set(c.hidden_roles or []) & user_roles)  # FR-SEC-15：不可见列移出白名单
+            if not c.missing  # FR-SCH-04：源库已删除的字段移出白名单
+            and not (set(c.hidden_roles or []) & user_roles)  # FR-SEC-15：不可见列移出白名单
         }
         # 索引首列集合（FR-SQL-21 提示来源）
         for idx in (tm.indexes or []):

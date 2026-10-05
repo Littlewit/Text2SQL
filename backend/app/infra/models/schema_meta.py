@@ -66,6 +66,7 @@ class ColumnMeta(IntPkMixin, Base):
     is_sensitive: Mapped[bool] = mapped_column(Boolean, default=False)  # 敏感标记（FR-SEC-20）
     hidden_roles: Mapped[dict | list | None] = mapped_column(JSON)  # 对这些角色不可见（FR-SEC-15）
     sample_values: Mapped[dict | list | None] = mapped_column(JSON)  # 低基数枚举采样（FR-SCH-05）
+    missing: Mapped[bool] = mapped_column(Boolean, default=False)  # 源库已删除（FR-SCH-04 影响提示）
 
     table_meta: Mapped["TableMeta"] = relationship(back_populates="columns")
 

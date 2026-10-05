@@ -135,6 +135,8 @@ async def _merge_scan_results(db: AsyncSession, ds_id: int, physical: dict) -> d
     """扫描结果与库内已有元数据合并：物理属性更新，业务标注保留。"""
     now = datetime.now(timezone.utc)
     stats = {"tables": 0, "columns": 0, "new_tables": 0, "new_columns": 0}
+    removed: list[dict] = []  # 本次扫描发现的被删除字段（FR-SCH-04）
+    affected_metrics: set[str] = set()  # 公式引用了被删字段的指标 code
     pk_set, fk_map = physical["pks"], physical["fks"]
 
     existing = {
@@ -166,10 +168,12 @@ async def _merge_scan_results(db: AsyncSession, ds_id: int, physical: dict) -> d
             ).scalars()
         }
         col_count = 0
+        seen_cols: set[str] = set()
         for schema_c, table_c, col_name, data_type, is_nullable in physical["columns"]:
             if (schema_c, table_c) != (schema_name, table_name):
                 continue
             col_count += 1
+            seen_cols.add(col_name)
             col = cols.get(col_name)
             if col is None:
                 col = ColumnMeta(table_meta_id=tm.id, column_name=col_name)
@@ -181,13 +185,43 @@ async def _merge_scan_results(db: AsyncSession, ds_id: int, physical: dict) -> d
             fk_ref = fk_map.get((schema_name, table_name, col_name))
             col.is_fk = fk_ref is not None
             col.fk_ref = fk_ref
+            col.missing = False  # 源库仍存在，清除历史缺失标记
         await db.flush()  # 物理属性赋值完成后再落库
+
+        # 字段删除检测（FR-SCH-04）：源库已不存在但元数据仍在的字段标记 missing，
+        # 并找出公式引用该字段的指标作为「受影响对象」提示（不自动删改指标）
+        for col_name, col in cols.items():
+            if col_name not in seen_cols and not col.missing:
+                col.missing = True
+                removed.append({"table": table_name, "column": col_name})
+                affected = await _find_affected_metrics(db, tm.table_name, col_name)
+                if affected:
+                    affected_metrics.update(affected)
 
         stats["tables"] += 1
         stats["columns"] += col_count
 
+    stats["removed_columns"] = removed  # 增量同步影响提示（FR-SCH-04）
+    stats["affected_metrics"] = sorted(affected_metrics)
     await db.commit()
     return stats
+
+
+async def _find_affected_metrics(db: AsyncSession, table_name: str, column_name: str) -> set[str]:
+    """找公式引用了「表.字段」的指标（FR-SCH-04）：大小写不敏感的子串匹配。
+
+    公式为结构化 JSON（{"expr": "SUM(orders.amount)"}），对 expr 做匹配。
+    """
+    from app.infra.models import Metric
+
+    needle = f"{table_name}.{column_name}".lower().replace(" ", "")
+    rows = (await db.execute(select(Metric))).scalars().all()
+    codes: set[str] = set()
+    for m in rows:
+        expr = str((m.formula or {}).get("expr", "")).lower().replace(" ", "")
+        if expr and needle in expr:
+            codes.add(m.code)
+    return codes
 
 
 async def _sample_enum_values(conn, db: AsyncSession, ds_id: int) -> None:

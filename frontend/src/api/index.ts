@@ -131,6 +131,11 @@ export const auditPdfExport = (queryId: number) =>
   http.post(`/query/${queryId}/export/pdf`).then((r) => r.data)
 export const getMyShares = () => http.get('/my-shares').then((r) => r.data.data)
 export const revokeShare = (id: number) => http.delete(`/shares/${id}`).then((r) => r.data)
+// M2-T5：运营看板与清理
+export const getOpsDashboard = (days: number) =>
+  http.get('/admin/ops/dashboard', { params: { days } }).then((r) => r.data.data)
+export const runOpsCleanup = (dryRun: boolean) =>
+  http.post('/admin/ops/cleanup', { dry_run: dryRun }).then((r) => r.data.data)
 // M2-T3：行级权限策略
 export const getRowPolicies = (dsId?: number) =>
   http.get('/admin/row-policies', { params: dsId ? { datasource_id: dsId } : {} }).then((r) => r.data.data)
