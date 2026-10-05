@@ -7,13 +7,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# pip 镜像源可经构建参数覆盖（国内网络提速）：--build-arg PIP_INDEX_URL=...
+ARG PIP_INDEX_URL=https://pypi.org/simple
+
 # 先装依赖再拷贝代码，利用 Docker 层缓存
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir --index-url ${PIP_INDEX_URL} .
 
 COPY . .
 
+# 迁移 + 启动入口（DEP-07：一键初始化；迁移幂等，可安全重复执行）
+RUN chmod +x /app/entrypoint.sh && sed -i 's/\r$//' /app/entrypoint.sh
+
 EXPOSE 8000
 
-# 使用 run.py 启动：跨平台处理事件循环兼容性（见 run.py 说明）
-CMD ["python", "run.py"]
+# entrypoint 先跑 Alembic 迁移再启动应用
+CMD ["sh", "/app/entrypoint.sh"]

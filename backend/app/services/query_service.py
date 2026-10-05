@@ -24,6 +24,7 @@ from app.infra.models import (
     TableMeta,
     User,
 )
+from app.core.obs import LLM_TOKENS, QUERIES, RETRIES
 from app.llm.client import LLMClient
 from app.llm.embedding import get_embedder
 from app.services import audit_service, masking
@@ -93,6 +94,7 @@ async def run_query(
         await db.commit()
         await emit("error", {"code": code, "user_message": message, "retryable": status == "failed"})
         await emit("done", {"query_id": history.id})
+        QUERIES.labels(status).inc()
         raise AppError(code, message, 422 if code >= 42200 else 500)
 
     # ---------- 阶段 1：NLU ----------
@@ -155,6 +157,7 @@ async def run_query(
                                    "errors": [vars(e) for e in guard_errors]}
         if not guard.ok:
             last_error_hint = "\n".join(f"- [{e.stage}] {e.message}（建议：{e.hint}）" for e in guard_errors)
+            RETRIES.inc()  # 自愈重试计数（NFR-O-01）
             continue
         sql_text = guard.rewritten_sql or generated.sql
 
@@ -232,6 +235,8 @@ async def run_query(
         object_type="query_history", detail={"question": question[:200], "rows": result.row_count},
     )
     await db.commit()
+    QUERIES.labels("success").inc()
+    LLM_TOKENS.inc(total_tokens)
     await _add_message_ref(db, conversation_id, history.id)
     await emit("result", {"columns": result.columns, "rows": masked_rows, "row_count": result.row_count,
                           "truncated": result.truncated, "duration_ms": result.duration_ms})
