@@ -137,10 +137,10 @@ async def list_conversations(
 ):
     items = (
         (await db.execute(
-            select(Conversation).where(Conversation.user_id == user.id).order_by(Conversation.updated_at.desc())
+            select(Conversation).where(Conversation.user_id == user.id).order_by(Conversation.created_at.desc())
         )).scalars().all()
     )
-    return ok([{"id": c.id, "title": c.title, "updated_at": str(c.updated_at)} for c in items])
+    return ok([{"id": c.id, "title": c.title, "created_at": str(c.created_at)} for c in items])
 
 
 @router.get("/conversations/{conversation_id}/messages")

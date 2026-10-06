@@ -1,6 +1,7 @@
 """FastAPI 应用工厂（§2.3）。"""
 
 import asyncio
+import logging
 import sys
 
 # Windows 默认 ProactorEventLoop 与 psycopg 异步模式不兼容（生产 Linux 容器不受影响）
@@ -31,6 +32,19 @@ def create_app() -> FastAPI:
     app.include_router(api_router, prefix=settings.api_prefix)
     # 业务异常统一转响应包络（§6.4），堆栈不进响应体
     app.add_exception_handler(AppError, app_error_handler)
+
+    # 未捕获异常兜底（M3）：记录完整堆栈到日志（NFR-O-02），对外返回统一包络
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(request, exc):  # noqa: ANN001
+        logging.getLogger("t2s.unhandled").exception(
+            "unhandled error: %s %s", request.method, request.url.path
+        )
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            status_code=500,
+            content={"code": 50000, "message": "服务器内部错误", "data": None},
+        )
 
     # Prometheus 指标端点（NFR-O-01）：挂载在根路径，生产仅供内网抓取（Nginx 限制）
     from prometheus_client import make_asgi_app
