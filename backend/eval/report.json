@@ -1,10 +1,10 @@
 {
  "total": 231,
- "passed": 206,
- "failed": 25,
+ "passed": 225,
+ "failed": 6,
  "skipped": 0,
- "duration_ms": 248217,
- "pass_rate": 0.8918,
+ "duration_ms": 200422,
+ "pass_rate": 0.974,
  "by_tag": {
   "time_month": {
    "total": 10,
@@ -56,15 +56,15 @@
   },
   "ex_topn": {
    "total": 6,
-   "passed": 2
+   "passed": 6
   },
   "ex_filter": {
    "total": 3,
-   "passed": 0
+   "passed": 3
   },
   "ex_sc01": {
    "total": 1,
-   "passed": 0
+   "passed": 1
   },
   "ex_sc03": {
    "total": 1,
@@ -72,15 +72,15 @@
   },
   "ex_count": {
    "total": 3,
-   "passed": 2
+   "passed": 3
   },
   "ex_topn_variant": {
    "total": 4,
-   "passed": 0
+   "passed": 4
   },
   "ex_agg": {
    "total": 2,
-   "passed": 0
+   "passed": 2
   },
   "nlu_refused": {
    "total": 15,
@@ -88,11 +88,11 @@
   },
   "nlu_clarify": {
    "total": 10,
-   "passed": 9
+   "passed": 8
   },
   "nlu_intent": {
    "total": 25,
-   "passed": 17
+   "passed": 22
   },
   "recall_topn": {
    "total": 6,
@@ -125,136 +125,28 @@
  },
  "failures": [
   {
-   "id": "E0144",
-   "kind": "sql_exec",
-   "question": "上个月GMV最高的3个店铺",
-   "detail": "结果值不一致：标准行 [\"'门店F'\", \"Decimal('85475.00')\"] 未被生成结果覆盖"
-  },
-  {
-   "id": "E0145",
-   "kind": "sql_exec",
-   "question": "2026年8月GMV最高的3个店铺",
-   "detail": "行数不一致：生成 1 行 vs 标准 3 行"
-  },
-  {
-   "id": "E0146",
-   "kind": "sql_exec",
-   "question": "上个月GMV最高的5个店铺",
-   "detail": "行数不一致：生成 1 行 vs 标准 5 行"
-  },
-  {
-   "id": "E0147",
-   "kind": "sql_exec",
-   "question": "2026年8月GMV最高的5个店铺",
-   "detail": "行数不一致：生成 1 行 vs 标准 5 行"
-  },
-  {
-   "id": "E0148",
-   "kind": "sql_exec",
-   "question": "这个季度华东各店铺的销售额",
-   "detail": "exception: Multiple rows were found when one or none was required"
-  },
-  {
-   "id": "E0149",
-   "kind": "sql_exec",
-   "question": "这个季度华南各店铺的销售额",
-   "detail": "exception: Multiple rows were found when one or none was required"
-  },
-  {
-   "id": "E0150",
-   "kind": "sql_exec",
-   "question": "这个季度华北各店铺的销售额",
-   "detail": "exception: Multiple rows were found when one or none was required"
-  },
-  {
-   "id": "E0151",
-   "kind": "sql_exec",
-   "question": "上个月哪个店铺GMV最高？",
-   "detail": "exception: 无法从模型输出中提取 SQL"
-  },
-  {
    "id": "E0152",
    "kind": "sql_exec",
    "question": "对比一下华东和华南的销售趋势",
    "detail": "exception: 无法理解该问题，请换个说法"
   },
   {
-   "id": "E0155",
-   "kind": "sql_exec",
-   "question": "各区域上个月的订单数",
-   "detail": "exception: Multiple rows were found when one or none was required"
-  },
-  {
-   "id": "E0156",
-   "kind": "sql_exec",
-   "question": "销售额最高的2个商品",
-   "detail": "exception: Multiple rows were found when one or none was required"
-  },
-  {
-   "id": "E0157",
-   "kind": "sql_exec",
-   "question": "销售额最高的2个品类",
-   "detail": "exception: Multiple rows were found when one or none was required"
-  },
-  {
-   "id": "E0158",
-   "kind": "sql_exec",
-   "question": "销售额最高的4个商品",
-   "detail": "exception: Multiple rows were found when one or none was required"
-  },
-  {
-   "id": "E0159",
-   "kind": "sql_exec",
-   "question": "销售额最高的4个品类",
-   "detail": "exception: Multiple rows were found when one or none was required"
-  },
-  {
-   "id": "E0160",
-   "kind": "sql_exec",
-   "question": "上个月平均订单金额",
-   "detail": "结果值不一致：标准行 [\"Decimal('542.7777777777777778')\"] 未被生成结果覆盖"
-  },
-  {
-   "id": "E0161",
-   "kind": "sql_exec",
-   "question": "上个月最大单笔订单金额",
-   "detail": "结果值不一致：标准行 [\"Decimal('948.00')\"] 未被生成结果覆盖"
-  },
-  {
    "id": "E0179",
    "kind": "clarify",
    "question": "最近怎么样",
-   "detail": "exception: 无法理解该问题，请换个说法"
+   "detail": "期望澄清，实际未澄清"
   },
   {
-   "id": "E0187",
-   "kind": "intent",
-   "question": "上个月哪个店铺GMV最高？",
-   "detail": "期望 stat，实际 query"
+   "id": "E0180",
+   "kind": "clarify",
+   "question": "查一下订单",
+   "detail": "期望澄清，实际未澄清"
   },
   {
-   "id": "E0191",
+   "id": "E0188",
    "kind": "intent",
-   "question": "各区域销售额排行",
-   "detail": "exception: Multiple rows were found when one or none was required"
-  },
-  {
-   "id": "E0194",
-   "kind": "intent",
-   "question": "按月看看销售额变化",
-   "detail": "exception: Multiple rows were found when one or none was required"
-  },
-  {
-   "id": "E0199",
-   "kind": "intent",
-   "question": "销售额最高的商品是哪个",
-   "detail": "exception: Multiple rows were found when one or none was required"
-  },
-  {
-   "id": "E0206",
-   "kind": "intent",
-   "question": "华南和华北销售额差异",
-   "detail": "exception: Multiple rows were found when one or none was required"
+   "question": "这个季度退货率超过10%的商品有哪些？",
+   "detail": "期望 query，实际 stat"
   },
   {
    "id": "E0208",
@@ -267,12 +159,6 @@
    "kind": "intent",
    "question": "本季度各区域GMV环比",
    "detail": "期望 trend，实际 compare"
-  },
-  {
-   "id": "E0211",
-   "kind": "intent",
-   "question": "帮我看下订单总量和退货总量",
-   "detail": "exception: 无法理解该问题，请换个说法"
   }
  ]
 }

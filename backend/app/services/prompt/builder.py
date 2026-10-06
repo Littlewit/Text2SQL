@@ -14,7 +14,7 @@ from app.llm.embedding import EmbeddingClient
 from app.services.nlu.intent import NluResult
 
 # 模板版本：模板内容变更时递增，历史查询可追溯当时版本（FR-NLU-23）
-PROMPT_TEMPLATE_VERSION = "v1.0"
+PROMPT_TEMPLATE_VERSION = "v1.1"
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
@@ -120,10 +120,13 @@ def build_sql_prompt(
 2. 只能使用「可用表结构」中列出的表与字段，不得引用其他对象；
 3. 指标必须按「指标定义」的公式与时间字段计算，不得自行编造口径；
 4. 枚举筛选使用原始值而非中文展示名；金额/数值不加千分位；
-5. 输出必须是 JSON：{{"sql": "...", "assumptions": ["..."], \
+5. 时间条件必须精确使用用户问题后括号内给出的时间范围（含端点），不得自行推断或改算日期；
+6. SELECT 只输出回答问题所需的最少列（业务名称列 + 聚合值列），禁止输出主键/id 等无关列；
+7. 问题含「前N/最高N/最低N」等 TopN 语义时，ORDER BY 聚合值并 LIMIT N；
+8. 输出必须是 JSON：{{"sql": "...", "assumptions": ["..."], \
 "confidence": 0.0, "explain": "一句话说明这条SQL做了什么"}}；
-6. 查询结果会被强制限制在 {row_limit} 行内；聚合粒度由问题决定，未指明时间粒度时在 assumptions 中声明；
-7. explain 面向非技术用户，说明查了什么、怎么算的。"""
+9. 查询结果会被强制限制在 {row_limit} 行内；聚合粒度由问题决定，未指明时间粒度时在 assumptions 中声明；
+10. explain 面向非技术用户，说明查了什么、怎么算的。"""
 
     user = f"""[SQL_GEN_TASK]
 【可用表结构】

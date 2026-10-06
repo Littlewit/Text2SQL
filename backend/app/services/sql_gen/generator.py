@@ -90,7 +90,15 @@ def _is_single_statement(sql: str) -> bool:
 
 
 async def generate_sql(llm, messages: list[dict]) -> tuple[GeneratedSQL, int]:
-    """调用 LLM 并解析输出，返回 (结果, token 用量)。"""
+    """调用 LLM 并解析输出，返回 (结果, token 用量)。
+
+    空内容/解析失败立即原样重试一次（DeepSeek 偶发空回复；再失败向上抛，
+    由调用方的错误回灌自愈机制处理 FR-SQL-30）。
+    """
     resp = await llm.chat(messages, json_mode=True)
-    parsed = parse_llm_output(resp.content)
+    try:
+        parsed = parse_llm_output(resp.content)
+    except OutputParseError:
+        resp = await llm.chat(messages, json_mode=True)
+        parsed = parse_llm_output(resp.content)
     return parsed, resp.tokens

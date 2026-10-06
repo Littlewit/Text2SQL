@@ -46,10 +46,18 @@ _INTENT_SYSTEM = (
     '"filters":[],"order":null,"limit":null,"time_granularity":null}}\n'
     "规则：\n"
     "1. 要求写库/改数/删数/导出全库/他人隐私/与数据查询无关的闲聊 → out_of_scope=true 并给 refuse_reason；\n"
-    "2. 缺少指标或时间或维度值不明，无法生成有意义的查询 → 填 clarify（给出反问与候选项）；\n"
+    "2. 仅当确实无法生成有意义查询时才 clarify：指标完全缺失（如「销量如何」没说看什么）"
+    "或维度值含糊（如「那个店铺」不知道哪个）；"
+    "注意：问题未提时间范围不算缺失（默认查全部历史）；指标能通过常识或同义词对应时不要澄清；\n"
     "3. 时间表述输出原文（如「上个月」），不要换算；\n"
     "4. metrics/dimensions 使用问题中的业务词汇；filters 提取筛选条件原文；\n"
     "5. confidence 为对意图与实体理解的确信度（0~1），不确定时给低分。\n"
+    "意图判例：\n"
+    "- 「上个月哪个店铺GMV最高」→ intent=stat（单期聚合+TopN）；\n"
+    "- 「近6个月每月订单量趋势」→ intent=trend（时间粒度=month）；\n"
+    "- 「华南和华东的GMV对比」/「本月比上个月GMV增长多少」→ intent=compare；\n"
+    "- 「查一下昨天的订单明细」→ intent=query（明细列表，无聚合）；\n"
+    "- 「店铺详情页在哪看」/「你好」→ out_of_scope=true。\n"
 )
 
 
@@ -159,13 +167,13 @@ async def _normalize_metrics(db: AsyncSession, names: list[str]) -> list[str]:
             await db.execute(
                 db_bind(Metric).where((Metric.name == name) | (Metric.code == name.lower()))
             )
-        ).scalar_one_or_none()
+        ).scalars().first()
         if m:
             codes.append(m.code)
             continue
         s = (
             await db.execute(db_bind(Synonym).where(Synonym.term == name))
-        ).scalar_one_or_none()
+        ).scalars().first()  # 防重复数据取首条（零信任：数据质量不假设完美）
         if s and s.target_type == "metric":
             target = await db.get(Metric, s.target_id)
             if target:
