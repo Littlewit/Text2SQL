@@ -33,6 +33,11 @@ def error_response(code: int, message: str, status_code: int) -> JSONResponse:
     )
 
 
-async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
-    """FastAPI 异常处理器：AppError → 统一包络。"""
+async def app_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """FastAPI 异常处理器：AppError → 统一包络。
+
+    签名声明为 Exception 以满足 starlette ExceptionHandler 的参数逆变要求，
+    运行时仅由 add_exception_handler(AppError, ...) 注册，此处断言收窄。
+    """
+    assert isinstance(exc, AppError), f"unexpected exception type: {type(exc).__name__}"
     return error_response(exc.code, exc.message, exc.status_code)
