@@ -1,0 +1,6 @@
+{
+  "include": ["backend"],
+  "extraPaths": ["backend"],
+  "reportImplicitRelativeImport": "none",
+  "typeCheckingMode": "basic"
+}
