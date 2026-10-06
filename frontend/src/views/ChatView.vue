@@ -331,7 +331,7 @@ function doLogout() {
     <footer class="input-bar">
       <div class="input-shell">
         <el-input
-          v-model="input" type="textarea" :autosize="{ minRows: 1, maxRows: 6 }" resize="none"
+          v-model="input" type="textarea" :autosize="{ minRows: 1 }" resize="none"
           placeholder="用自然语言提问，Enter 发送，Shift+Enter 换行"
           class="chat-textarea" @keydown.enter.exact.prevent="send()" />
         <span class="send-btn" :class="{ disabled: busy || !input.trim(), loading: busy }"
@@ -415,7 +415,7 @@ function doLogout() {
 .chat-textarea :deep(.el-textarea__inner) {
   box-shadow: none !important; border: none !important; outline: none !important;
   padding: .45rem 0; font-size: .95rem; line-height: 1.55; background: transparent;
-  caret-color: var(--el-color-primary); }
+  caret-color: var(--el-color-primary); overflow-y: hidden !important; }
 .chat-textarea :deep(.el-textarea__inner:focus) {
   box-shadow: none !important; border: none !important; }
 .chat-textarea textarea::placeholder { color: var(--el-text-color-placeholder); }
