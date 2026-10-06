@@ -46,10 +46,32 @@ tests/               # 单元（无外部依赖）+ 集成（真实 PG）
 | `SECRET_KEY` | JWT 签名密钥，生产必须覆盖 |
 | `EMBEDDING_MODEL` / `EMBEDDING_DIM` | Embedding 模型与维度（默认 1024） |
 
+## 进入环境
+
+```bash
+cd backend
+
+# Windows（PowerShell）
+python -m venv .venv
+.venv\Scripts\activate          # 激活后命令行前缀出现 (.venv)
+
+# Linux / macOS
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+- 激活后 `python` / `pip` 即指向虚拟环境，无需再写 `.venv\Scripts\python`；
+- 退出虚拟环境：`deactivate`；
+- 依赖安装与所有命令（alembic / pytest / eval 等）均在**激活状态**下执行；
+- IDE（VS Code / PyCharm）选择解释器为 `backend/.venv` 即可自动激活。
+
+> 不激活也可以用完整路径调用：`.venv\Scripts\python -m pytest ...`（Windows）或
+> `.venv/bin/python -m pytest ...`（Linux），效果等价。
+
 ## 启动
 
 ```bash
-python -m venv .venv && .venv\Scripts\activate   # Linux: source .venv/bin/activate
+# （进入虚拟环境后）
 pip install -e ".[dev]"
 alembic upgrade head      # 迁移（首次自动启用 pgvector）
 python run.py             # 统一入口（Windows 事件循环兼容处理）
