@@ -416,10 +416,10 @@ function doLogout() {
   margin-bottom: .55rem; transition: color .2s; flex-shrink: 0; }
 .input-shell:focus-within .input-deco { color: var(--el-color-primary); }
 .chat-textarea { flex: 1; }
-.chat-textarea .el-textarea__inner { box-shadow: none !important; padding: .3rem 0;
+.chat-textarea .el-textarea__inner { box-shadow: none !important; padding: .45rem 0;
   font-size: .95rem; line-height: 1.55; background: transparent; caret-color: var(--el-color-primary); }
 .chat-textarea textarea::placeholder { color: var(--el-text-color-placeholder); }
-.send-btn { flex-shrink: 0; width: 38px; height: 38px; font-size: 1rem; margin-bottom: 1px;
+.send-btn { flex-shrink: 0; width: 30px; height: 30px; font-size: .85rem; margin-bottom: 4px;
   border: none; background: var(--t2s-grad); transition: transform .18s, box-shadow .18s, filter .18s; }
 .send-btn:hover:not(.is-disabled) { transform: scale(1.06);
   box-shadow: 0 4px 14px rgb(76 110 245 / 40%); }
