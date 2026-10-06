@@ -418,7 +418,8 @@ function doLogout() {
   box-shadow: none !important; border: none !important; }
 .chat-textarea textarea::placeholder { color: var(--el-text-color-placeholder); }
 .send-btn { flex-shrink: 0; width: 30px; height: 30px; font-size: .85rem; margin-bottom: 4px;
-  border: none; background: var(--t2s-grad); transition: transform .18s, box-shadow .18s, filter .18s; }
+  padding: 0; border: none; background: var(--t2s-grad);
+  transition: transform .18s, box-shadow .18s, filter .18s; }
 .send-btn:hover:not(.is-disabled) { transform: scale(1.06);
   box-shadow: 0 4px 14px rgb(76 110 245 / 40%); }
 .send-btn:active:not(.is-disabled) { transform: scale(.96); }
