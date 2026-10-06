@@ -154,7 +154,9 @@ function retryLast(msg: ChatMessage) {
 
 function renderChart(el: HTMLElement, msg: ChatMessage) {
   if (msg.chartType && msg.chartOption && msg.chartType !== 'empty' && msg.chartType !== 'table') {
-    const chart = echarts.init(el)
+    // 暗色主题下使用 echarts 内置 dark 主题（文字/背景自动适配）
+    const isDark = document.documentElement.classList.contains('dark')
+    const chart = echarts.init(el, isDark ? 'dark' : undefined)
     chart.setOption(msg.chartOption as echarts.EChartsCoreOption)
   }
 }

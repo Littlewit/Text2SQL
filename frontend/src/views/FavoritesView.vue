@@ -32,7 +32,9 @@ async function run(f: Fav) {
 
 async function remove(f: Fav) {
   try {
-    await ElMessageBox.confirm(`删除收藏「${f.name}」？`, '删除收藏', { type: 'warning' })
+    await ElMessageBox.confirm(`删除收藏「${f.name}」？`, '删除收藏', {
+      type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消',
+    })
   } catch { return }
   await deleteFavorite(f.id)
   await load()

@@ -233,6 +233,11 @@ async function saveConfig(c: { key: string; value: unknown }) {
   await patchConfig(c.key, c.value)
   ElMessage.success(`配置 ${c.key} 已更新（留痕审计）`)
 }
+
+// el-table 作用域槽的 row 为 DefaultRow，包一层避免模板内类型断言
+function saveConfigRow(row: Record<string, unknown>) {
+  return saveConfig(row as unknown as { key: string; value: unknown })
+}
 </script>
 
 <template>
@@ -309,42 +314,58 @@ async function saveConfig(c: { key: string; value: unknown }) {
         </el-select>
       </div>
       <p v-if="evalMsg" class="cleanup-msg">{{ evalMsg }}</p>
-      <table>
-        <thead><tr><th>ID</th><th>模式</th><th>状态</th><th>总数</th><th>通过</th><th>失败</th><th>跳过</th><th>通过率</th><th>模型</th><th>时间</th><th>操作</th></tr></thead>
-        <tbody>
-          <tr v-for="r in evalReports" :key="r.id">
-            <td>#{{ r.id }}</td>
-            <td>{{ r.mode }}</td>
-            <td>{{ r.status }}</td>
-            <td>{{ r.total }}</td>
-            <td>{{ r.passed }}</td>
-            <td>{{ r.failed }}</td>
-            <td>{{ r.skipped }}</td>
-            <td><b>{{ (r.pass_rate * 100).toFixed(1) }}%</b></td>
-            <td>{{ r.model_version || '-' }}</td>
-            <td>{{ r.created_at?.slice(0, 19) }}</td>
-            <td>
-              <button v-if="cmpB && cmpB !== r.id" @click="doCompare(r.id)">与 #{{ cmpB }} 对比</button>
-              <button @click="evalDetail(r.id)">详情</button>
-            </td>
-          </tr>
-          <tr v-if="!evalReports.length"><td colspan="11">暂无评测记录，点击上方按钮触发</td></tr>
-        </tbody>
-      </table>
+      <el-table :data="evalReports" size="small" stripe>
+        <el-table-column label="ID" width="70">
+          <template #default="{ row }">#{{ row.id }}</template>
+        </el-table-column>
+        <el-table-column prop="mode" label="模式" width="80" />
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 'done' ? 'success' : row.status === 'failed' ? 'danger' : 'warning'" size="small">
+              {{ row.status }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="total" label="总数" width="70" />
+        <el-table-column prop="passed" label="通过" width="70" />
+        <el-table-column prop="failed" label="失败" width="70" />
+        <el-table-column prop="skipped" label="跳过" width="70" />
+        <el-table-column label="通过率" width="90">
+          <template #default="{ row }"><b>{{ (row.pass_rate * 100).toFixed(1) }}%</b></template>
+        </el-table-column>
+        <el-table-column label="模型" width="120">
+          <template #default="{ row }">{{ row.model_version || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="时间" width="160">
+          <template #default="{ row }">{{ row.created_at?.slice(0, 19) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="170">
+          <template #default="{ row }">
+            <el-button v-if="cmpB && cmpB !== row.id" size="small" @click="doCompare(row.id)">与 #{{ cmpB }} 对比</el-button>
+            <el-button size="small" plain @click="evalDetail(row.id)">详情</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!evalReports.length" description="暂无评测记录，点击上方按钮触发" :image-size="60" />
       <!-- 分维度对比结果（EV-05） -->
       <div v-if="cmpResult" class="shares">
         <h3>对比：#{{ cmpResult.b.id }} vs #{{ cmpResult.a.id }}（整体 {{ sign(cmpResult.overall_diff) }}）</h3>
-        <table>
-          <thead><tr><th>维度</th><th>基准通过率</th><th>对比通过率</th><th>变化</th></tr></thead>
-          <tbody>
-            <tr v-for="(v, tag) in cmpResult.by_tag" :key="tag">
-              <td>{{ tag }}</td>
-              <td>{{ (v.a * 100).toFixed(1) }}%</td>
-              <td>{{ (v.b * 100).toFixed(1) }}%</td>
-              <td :class="v.diff >= 0 ? 'success' : 'failed'">{{ sign(v.diff) }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <el-table :data="Object.entries(cmpResult.by_tag)" size="small" stripe>
+          <el-table-column label="维度" min-width="160">
+            <template #default="{ row }">{{ row[0] }}</template>
+          </el-table-column>
+          <el-table-column label="基准通过率" width="120">
+            <template #default="{ row }">{{ (row[1].a * 100).toFixed(1) }}%</template>
+          </el-table-column>
+          <el-table-column label="对比通过率" width="120">
+            <template #default="{ row }">{{ (row[1].b * 100).toFixed(1) }}%</template>
+          </el-table-column>
+          <el-table-column label="变化" width="100">
+            <template #default="{ row }">
+              <el-tag :type="row[1].diff >= 0 ? 'success' : 'danger'" size="small">{{ sign(row[1].diff) }}</el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
       </div>
       <!-- 分维度详情 -->
       <div v-if="detailTags" class="shares">
@@ -414,114 +435,133 @@ async function saveConfig(c: { key: string; value: unknown }) {
     <!-- 指标 -->
     <section v-if="tab === 'metric'">
       <h2>指标定义（FR-SCH-12：口径由元数据定义，LLM 不得自造）</h2>
-      <form class="row" @submit.prevent="saveMetric">
-        <input v-model="metricForm.name" placeholder="指标名（如 GMV）" required />
-        <input v-model="metricForm.code" placeholder="编码（如 gmv）" required />
-        <input v-model="metricForm.description" placeholder="业务口径说明" />
-        <input v-model="metricForm.unit" placeholder="单位" />
-        <button type="submit">创建</button>
-      </form>
+      <el-form class="row" inline @submit.prevent="saveMetric">
+        <el-form-item><el-input v-model="metricForm.name" placeholder="指标名（如 GMV）" style="width: 150px" /></el-form-item>
+        <el-form-item><el-input v-model="metricForm.code" placeholder="编码（如 gmv）" style="width: 130px" /></el-form-item>
+        <el-form-item><el-input v-model="metricForm.description" placeholder="业务口径说明" style="width: 200px" /></el-form-item>
+        <el-form-item><el-input v-model="metricForm.unit" placeholder="单位" style="width: 90px" /></el-form-item>
+        <el-form-item><el-button type="primary" native-type="submit">创建</el-button></el-form-item>
+      </el-form>
       <ul><li v-for="m in metrics" :key="m.id">{{ m.name }}（{{ m.code }}）{{ m.description ?? '' }}</li></ul>
     </section>
 
     <!-- 系统配置 -->
     <section v-if="tab === 'config'">
       <h2>系统参数（FR-ADM-05：变更留痕）</h2>
-      <table>
-        <thead><tr><th>键</th><th>值</th><th>说明</th><th></th></tr></thead>
-        <tbody>
-          <tr v-for="c in configs" :key="c.key">
-            <td>{{ c.key }}</td>
-            <td><input v-model="c.value" /></td>
-            <td>{{ c.description }}</td>
-            <td><button @click="saveConfig(c)">保存</button></td>
-          </tr>
-        </tbody>
-      </table>
+      <el-table :data="configs" size="small" stripe>
+        <el-table-column prop="key" label="键" width="260" />
+        <el-table-column label="值" min-width="180">
+          <template #default="{ row }">
+            <el-input v-model="row.value" size="small" />
+          </template>
+        </el-table-column>
+        <el-table-column prop="description" label="说明" min-width="220" show-overflow-tooltip />
+        <el-table-column label="操作" width="90">
+          <template #default="{ row }">
+            <el-button size="small" type="primary" plain @click="saveConfigRow(row)">保存</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
     </section>
 
     <!-- 样例库与反馈（M2-T1：FR-ADM-04、FR-UI-08、FR-ADM-08） -->
     <section v-if="tab === 'fewshot'">
       <h2>待审核纠错反馈</h2>
-      <table v-if="feedbacks.length">
-        <thead><tr><th>评分</th><th>正确 SQL</th><th>说明</th><th>操作</th></tr></thead>
-        <tbody>
-          <tr v-for="f in feedbacks" :key="f.id">
-            <td>{{ f.rating }}</td>
-            <td><code>{{ f.correction_sql }}</code></td>
-            <td>{{ f.comment }}</td>
-            <td>
-              <button @click="reviewFeedback(f.id, true)">采纳（转样例）</button>
-              <button class="danger" @click="reviewFeedback(f.id, false)">驳回</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <p v-else>暂无待审核反馈</p>
+      <el-table v-if="feedbacks.length" :data="feedbacks" size="small" stripe>
+        <el-table-column prop="rating" label="评分" width="80" />
+        <el-table-column label="正确 SQL" min-width="220" show-overflow-tooltip>
+          <template #default="{ row }"><code>{{ row.correction_sql }}</code></template>
+        </el-table-column>
+        <el-table-column prop="comment" label="说明" min-width="160" show-overflow-tooltip />
+        <el-table-column label="操作" width="180">
+          <template #default="{ row }">
+            <el-button size="small" type="primary" plain @click="reviewFeedback(row.id, true)">采纳（转样例）</el-button>
+            <el-button size="small" type="danger" plain @click="reviewFeedback(row.id, false)">驳回</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-else description="暂无待审核反馈" :image-size="60" />
 
       <h2>Few-shot 样例库</h2>
-      <form class="row" @submit.prevent="addFewShot">
-        <input v-model="fewShotForm.question" placeholder="问题" required />
-        <input v-model="fewShotForm.sql_text" placeholder="标准 SQL" required />
-        <input v-model="fewShotForm.explanation" placeholder="说明" />
-        <button type="submit">录入（待审核）</button>
-      </form>
-      <table>
-        <thead><tr><th>问题</th><th>SQL</th><th>状态</th><th>命中</th><th>操作</th></tr></thead>
-        <tbody>
-          <tr v-for="s in fewShots" :key="s.id">
-            <td>{{ s.question }}</td>
-            <td><code>{{ s.sql_text.slice(0, 60) }}…</code></td>
-            <td>{{ s.status === 2 ? '待审核' : s.status === 1 ? '启用' : '停用' }}</td>
-            <td>{{ s.hit_count }}</td>
-            <td><button class="danger" @click="delFewShot(s.id)">删除</button></td>
-          </tr>
-        </tbody>
-      </table>
+      <el-form class="row" inline @submit.prevent="addFewShot">
+        <el-form-item><el-input v-model="fewShotForm.question" placeholder="问题" style="width: 200px" /></el-form-item>
+        <el-form-item><el-input v-model="fewShotForm.sql_text" placeholder="标准 SQL" style="width: 280px" /></el-form-item>
+        <el-form-item><el-input v-model="fewShotForm.explanation" placeholder="说明" style="width: 160px" /></el-form-item>
+        <el-form-item><el-button type="primary" native-type="submit">录入（待审核）</el-button></el-form-item>
+      </el-form>
+      <el-table :data="fewShots" size="small" stripe>
+        <el-table-column prop="question" label="问题" min-width="200" show-overflow-tooltip />
+        <el-table-column label="SQL" min-width="220" show-overflow-tooltip>
+          <template #default="{ row }"><code>{{ row.sql_text.slice(0, 60) }}…</code></template>
+        </el-table-column>
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 1 ? 'success' : row.status === 2 ? 'warning' : 'info'" size="small">
+              {{ row.status === 2 ? '待审核' : row.status === 1 ? '启用' : '停用' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="hit_count" label="命中" width="70" />
+        <el-table-column label="操作" width="90">
+          <template #default="{ row }">
+            <el-button size="small" type="danger" plain @click="delFewShot(row.id)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
 
       <h2>未覆盖问题（FR-ADM-08）</h2>
       <p>累计未覆盖查询：{{ uncaptured?.total_uncovered ?? 0 }} 次，去重后 {{ uncaptured?.items.length ?? 0 }} 个问题</p>
-      <table v-if="uncaptured?.items.length">
-        <thead><tr><th>问题</th><th>次数</th><th>状态</th></tr></thead>
-        <tbody>
-          <tr v-for="(u, i) in uncaptured.items" :key="i">
-            <td>{{ u.question }}</td>
-            <td>{{ u.count }}</td>
-            <td>{{ u.statuses.join(' / ') }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <el-table v-if="uncaptured?.items.length" :data="uncaptured.items" size="small" stripe>
+        <el-table-column prop="question" label="问题" min-width="240" show-overflow-tooltip />
+        <el-table-column prop="count" label="次数" width="80" />
+        <el-table-column label="状态" min-width="160">
+          <template #default="{ row }">{{ row.statuses.join(' / ') }}</template>
+        </el-table-column>
+      </el-table>
     </section>
 
     <!-- 行级权限策略（M2-T3：FR-SEC-10/12） -->
     <section v-if="tab === 'rowpolicy'">
       <h2>行级权限策略（注入执行 SQL，对新查询立即生效）</h2>
-      <form class="row" @submit.prevent="addRowPolicy">
-        <select v-model.number="policyForm.table_meta_id">
-          <option v-for="t in tables" :key="t.id" :value="t.id">{{ t.table_name }}</option>
-        </select>
-        <input v-model="policyForm.filter_template" placeholder="过滤片段，如 region = '华东'" required />
-        <input v-model="policyForm.apply_to_role_ids" placeholder="角色，逗号分隔（R-BIZ）" required />
-        <select v-model="policyForm.combine_mode">
-          <option value="union">并集 (OR)</option>
-          <option value="intersect">交集 (AND)</option>
-        </select>
-        <button type="submit">创建</button>
-      </form>
+      <el-form class="row" inline @submit.prevent="addRowPolicy">
+        <el-form-item>
+          <el-select v-model="policyForm.table_meta_id" placeholder="目标表" style="width: 150px">
+            <el-option v-for="t in tables" :key="t.id" :value="t.id" :label="t.table_name" />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <el-input v-model="policyForm.filter_template" placeholder="过滤片段，如 region = '华东'" style="width: 220px" />
+        </el-form-item>
+        <el-form-item>
+          <el-input v-model="policyForm.apply_to_role_ids" placeholder="角色，逗号分隔（R-BIZ）" style="width: 180px" />
+        </el-form-item>
+        <el-form-item>
+          <el-select v-model="policyForm.combine_mode" style="width: 120px">
+            <el-option value="union" label="并集 (OR)" />
+            <el-option value="intersect" label="交集 (AND)" />
+          </el-select>
+        </el-form-item>
+        <el-form-item><el-button type="primary" native-type="submit">创建</el-button></el-form-item>
+      </el-form>
       <p class="hint">先在「数据源」或「表标注」页选定数据源并扫描，再选择目标表</p>
-      <table>
-        <thead><tr><th>表 ID</th><th>过滤条件</th><th>适用角色</th><th>叠加</th><th>启用</th><th></th></tr></thead>
-        <tbody>
-          <tr v-for="p in rowPolicies" :key="p.id">
-            <td>{{ p.table_meta_id }}</td>
-            <td><code>{{ p.filter_template }}</code></td>
-            <td>{{ p.apply_to_role_ids.join(', ') }}</td>
-            <td>{{ p.combine_mode }}</td>
-            <td>{{ p.enabled ? '是' : '否' }}</td>
-            <td><button class="danger" @click="delRowPolicy(p.id)">删除</button></td>
-          </tr>
-        </tbody>
-      </table>
+      <el-table :data="rowPolicies" size="small" stripe>
+        <el-table-column prop="table_meta_id" label="表 ID" width="80" />
+        <el-table-column label="过滤条件" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }"><code>{{ row.filter_template }}</code></template>
+        </el-table-column>
+        <el-table-column label="适用角色" min-width="140">
+          <template #default="{ row }">{{ row.apply_to_role_ids.join(', ') }}</template>
+        </el-table-column>
+        <el-table-column prop="combine_mode" label="叠加" width="90" />
+        <el-table-column label="启用" width="70">
+          <template #default="{ row }">{{ row.enabled ? '是' : '否' }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="90">
+          <template #default="{ row }">
+            <el-button size="small" type="danger" plain @click="delRowPolicy(row.id)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
     </section>
   </div>
 </template>

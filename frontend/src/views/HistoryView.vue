@@ -40,7 +40,9 @@ async function toggleShares() {
 
 async function removeShare(id: number) {
   try {
-    await ElMessageBox.confirm('撤销后接收方将无法访问该分享，确认撤销？', '撤销分享', { type: 'warning' })
+    await ElMessageBox.confirm('撤销后接收方将无法访问该分享，确认撤销？', '撤销分享', {
+      type: 'warning', confirmButtonText: '确认撤销', cancelButtonText: '取消',
+    })
   } catch { return }
   await revokeShare(id)
   shares.value = await getMyShares()
