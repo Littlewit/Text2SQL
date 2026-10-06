@@ -334,8 +334,10 @@ function doLogout() {
           v-model="input" type="textarea" :autosize="{ minRows: 1, maxRows: 6 }" resize="none"
           placeholder="用自然语言提问，Enter 发送，Shift+Enter 换行"
           class="chat-textarea" @keydown.enter.exact.prevent="send()" />
-        <el-button class="send-btn" :icon="Promotion" circle
-                   :disabled="busy || !input.trim()" :loading="busy" @click="send()" />
+        <span class="send-btn" :class="{ disabled: busy || !input.trim(), loading: busy }"
+              title="发送" @click="send()">
+          <el-icon><Promotion /></el-icon>
+        </span>
       </div>
     </footer>
   </div>
@@ -417,12 +419,13 @@ function doLogout() {
 .chat-textarea :deep(.el-textarea__inner:focus) {
   box-shadow: none !important; border: none !important; }
 .chat-textarea textarea::placeholder { color: var(--el-text-color-placeholder); }
-.send-btn { flex-shrink: 0; width: 30px; height: 30px; font-size: .85rem; margin-bottom: 4px;
-  padding: 0; border: none; background: var(--t2s-grad);
-  transition: transform .18s, box-shadow .18s, filter .18s; }
-.send-btn:hover:not(.is-disabled) { transform: scale(1.06);
-  box-shadow: 0 4px 14px rgb(76 110 245 / 40%); }
-.send-btn:active:not(.is-disabled) { transform: scale(.96); }
-.send-btn.is-disabled, .send-btn.is-loading { background: var(--el-fill-color-dark);
-  box-shadow: none; filter: saturate(.4); }
+.send-btn { flex-shrink: 0; width: 30px; height: 30px; margin-bottom: 5px;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  font-size: 22px; color: var(--t2s-primary); border: none; background: none; padding: 0;
+  transition: transform .18s, color .18s; }
+.send-btn:hover:not(.disabled) { transform: scale(1.15); }
+.send-btn:active:not(.disabled) { transform: scale(.94); }
+.send-btn.disabled { color: var(--el-text-color-placeholder); cursor: not-allowed; }
+.send-btn.loading .el-icon { animation: send-spin 1s linear infinite; }
+@keyframes send-spin { to { transform: rotate(360deg); } }
 </style>
