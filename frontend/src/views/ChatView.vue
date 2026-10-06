@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 主对话界面（UX-01）：左侧会话列表 + 右侧对话流；SSE 流式（FR-UI-05）—— Element Plus 版
 // echarts 按需注册（体积优化：全量 ~1MB → 按需 ~400KB）
-import { Promotion } from '@element-plus/icons-vue'
+import { Promotion, MagicStick } from '@element-plus/icons-vue'
 import * as echarts from 'echarts/core'
 import { LineChart, BarChart, PieChart } from 'echarts/charts'
 import {
@@ -330,11 +330,12 @@ function doLogout() {
     <!-- 输入区（豆包风格：自适应多行 + 内嵌工具栏 + 圆形发送键） -->
     <footer class="input-bar">
       <div class="input-shell">
+        <el-icon class="input-deco"><MagicStick /></el-icon>
         <el-input
           v-model="input" type="textarea" :autosize="{ minRows: 1, maxRows: 6 }" resize="none"
           placeholder="用自然语言提问，Enter 发送，Shift+Enter 换行"
           class="chat-textarea" @keydown.enter.exact.prevent="send()" />
-        <el-button class="send-btn" type="primary" :icon="Promotion" circle
+        <el-button class="send-btn" :icon="Promotion" circle
                    :disabled="busy || !input.trim()" :loading="busy" @click="send()" />
       </div>
     </footer>
@@ -397,16 +398,32 @@ function doLogout() {
 .sql-pre { background: var(--el-fill-color-light); padding: .8rem; border-radius: 8px;
   overflow-x: auto; margin: 0; font-size: .82rem; }
 
-/* ---- Input bar (Doubao-style: floating card, autosize textarea, inline tools) ---- */
+/* ---- Input bar (floating card, gradient focus ring, autosize textarea) ---- */
 .input-bar { padding: .9rem 2rem 1.3rem; background: var(--el-bg-color-page); }
-.input-shell { display: flex; align-items: flex-end; gap: .5rem; max-width: 860px; margin: 0 auto;
-  padding: .45rem .5rem .45rem .9rem; border: 1px solid var(--el-border-color);
-  border-radius: 22px; background: var(--el-bg-color);
-  box-shadow: 0 4px 20px rgb(16 24 40 / 7%); transition: border-color .2s, box-shadow .2s; }
-.input-shell:focus-within { border-color: var(--el-color-primary);
-  box-shadow: 0 6px 24px rgb(76 110 245 / 16%); }
+.input-shell { display: flex; align-items: flex-end; gap: .4rem; max-width: 860px; margin: 0 auto;
+  padding: .45rem .45rem .45rem .95rem; border: 1px solid transparent; border-radius: 22px;
+  background:
+    linear-gradient(var(--el-bg-color), var(--el-bg-color)) padding-box,
+    linear-gradient(135deg, var(--el-border-color), var(--el-border-color-lighter)) border-box;
+  box-shadow: 0 4px 20px rgb(16 24 40 / 7%); transition: box-shadow .25s, background .25s; }
+.input-shell:hover { box-shadow: 0 6px 24px rgb(16 24 40 / 10%); }
+.input-shell:focus-within {
+  background:
+    linear-gradient(var(--el-bg-color), var(--el-bg-color)) padding-box,
+    var(--t2s-grad) border-box;
+  box-shadow: 0 6px 26px rgb(76 110 245 / 20%); }
+.input-deco { color: var(--el-text-color-placeholder); font-size: 1.05rem;
+  margin-bottom: .55rem; transition: color .2s; flex-shrink: 0; }
+.input-shell:focus-within .input-deco { color: var(--el-color-primary); }
 .chat-textarea { flex: 1; }
 .chat-textarea .el-textarea__inner { box-shadow: none !important; padding: .3rem 0;
-  font-size: .95rem; line-height: 1.55; background: transparent; }
-.send-btn { flex-shrink: 0; width: 38px; height: 38px; font-size: 1rem; margin-bottom: 1px; }
+  font-size: .95rem; line-height: 1.55; background: transparent; caret-color: var(--el-color-primary); }
+.chat-textarea textarea::placeholder { color: var(--el-text-color-placeholder); }
+.send-btn { flex-shrink: 0; width: 38px; height: 38px; font-size: 1rem; margin-bottom: 1px;
+  border: none; background: var(--t2s-grad); transition: transform .18s, box-shadow .18s, filter .18s; }
+.send-btn:hover:not(.is-disabled) { transform: scale(1.06);
+  box-shadow: 0 4px 14px rgb(76 110 245 / 40%); }
+.send-btn:active:not(.is-disabled) { transform: scale(.96); }
+.send-btn.is-disabled, .send-btn.is-loading { background: var(--el-fill-color-dark);
+  box-shadow: none; filter: saturate(.4); }
 </style>
