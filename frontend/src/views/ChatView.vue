@@ -235,6 +235,12 @@ function doLogout() {
           {{ c.title || '会话 ' + c.id }}
         </div>
       </el-scrollbar>
+      <div class="ds-picker" v-if="datasources.length">
+        <span>数据源</span>
+        <el-select v-model="datasourceId" size="small" placeholder="选择数据源">
+          <el-option v-for="d in datasources" :key="d.id" :label="d.name" :value="d.id" />
+        </el-select>
+      </div>
     </aside>
 
     <!-- 右侧对话流 -->
@@ -329,12 +335,7 @@ function doLogout() {
           placeholder="用自然语言提问，Enter 发送，Shift+Enter 换行"
           class="chat-textarea" @keydown.enter.exact.prevent="send()" />
         <div class="input-tools">
-          <div class="tools-left">
-            <el-select v-if="datasources.length" v-model="datasourceId" size="small"
-                       class="ds-inline" placeholder="数据源">
-              <el-option v-for="d in datasources" :key="d.id" :label="d.name" :value="d.id" />
-            </el-select>
-          </div>
+          <div class="tools-left"></div>
           <el-button class="send-btn" type="primary" :icon="Promotion" circle
                      :disabled="busy || !input.trim()" :loading="busy" @click="send()" />
         </div>
@@ -368,6 +369,8 @@ function doLogout() {
 .conv-item.active { background: var(--el-color-primary-light-9); color: var(--el-color-primary); font-weight: 600; }
 .conv-item.active::before { content: ''; position: absolute; left: 0; top: 20%; bottom: 20%;
   width: 3px; border-radius: 2px; background: var(--el-color-primary); }
+.ds-picker { font-size: .8rem; margin-top: 1rem; display: flex; flex-direction: column;
+  gap: .3rem; color: var(--el-text-color-secondary); }
 
 /* ---- Chat main ---- */
 .chat-main { overflow-y: auto; padding: 1.6rem 2rem; background: var(--el-bg-color-page); }
@@ -407,10 +410,6 @@ function doLogout() {
 .chat-textarea textarea { background: transparent; }
 .chat-textarea .el-textarea__inner { box-shadow: none !important; padding: .2rem .2rem;
   font-size: .95rem; line-height: 1.55; background: transparent; }
-.input-tools { display: flex; justify-content: space-between; align-items: center; margin-top: .35rem; }
-.tools-left { display: flex; gap: .5rem; align-items: center; }
-.ds-inline { width: 170px; }
-.ds-inline .el-select__wrapper { border-radius: 16px; background: var(--el-fill-color-light);
-  box-shadow: none !important; min-height: 30px; }
+.input-tools { display: flex; justify-content: flex-end; align-items: center; margin-top: .35rem; }
 .send-btn { width: 38px; height: 38px; font-size: 1rem; }
 </style>
