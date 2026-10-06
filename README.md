@@ -8,7 +8,7 @@
 ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-async-009688?logo=fastapi&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%20%2B%20pgvector-4169E1?logo=postgresql&logoColor=white)
-![Vue](https://img.shields.io/badge/Vue-3.x-4FC08D?logo=vuedotjs&logoColor=white)
+![Vue](https://img.shields.io/badge/Vue-3.x%20%2B%20Element%20Plus-4FC08D?logo=vuedotjs&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker%20Compose-ready-2496ED?logo=docker&logoColor=white)
 ![Eval](https://img.shields.io/badge/%E8%AF%84%E6%B5%8B%E5%9F%BA%E7%BA%BF-231%E6%9D%A1%20%C2%B7%2097.4%25-brightgreen)
 

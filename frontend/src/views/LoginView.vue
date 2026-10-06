@@ -1,24 +1,26 @@
 <script setup lang="ts">
-// 登录页（FR-SEC-40）
-import { ref } from 'vue'
+// 登录页（FR-SEC-40）：Element Plus 表单
+import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { login } from '../api'
 
 const router = useRouter()
-const username = ref('')
-const password = ref('')
-const error = ref('')
 const loading = ref(false)
+const form = reactive({ username: '', password: '' })
 
 async function doLogin() {
-  error.value = ''
+  if (!form.username || !form.password) {
+    ElMessage.warning('请输入用户名与密码')
+    return
+  }
   loading.value = true
   try {
-    await login(username.value, password.value)
+    await login(form.username, form.password)
     router.push('/')
   } catch (e: unknown) {
     const resp = (e as { response?: { data?: { message?: string } } }).response
-    error.value = resp?.data?.message ?? '登录失败，请检查用户名密码'
+    ElMessage.error(resp?.data?.message ?? '登录失败，请检查用户名密码')
   } finally {
     loading.value = false
   }
@@ -27,21 +29,30 @@ async function doLogin() {
 
 <template>
   <div class="login-wrap">
-    <form class="login-card" @submit.prevent="doLogin">
+    <el-card class="login-card" shadow="always">
       <h1>Text2SQL 智能数据分析平台</h1>
-      <input v-model="username" placeholder="用户名" autocomplete="username" />
-      <input v-model="password" type="password" placeholder="密码" autocomplete="current-password" />
-      <button type="submit" :disabled="loading">{{ loading ? '登录中…' : '登录' }}</button>
-      <p v-if="error" class="error">{{ error }}</p>
-    </form>
+      <p class="subtitle">用自然语言查询数据库，即刻生成图表与结论</p>
+      <el-form label-position="top" @submit.prevent="doLogin">
+        <el-form-item label="用户名">
+          <el-input v-model="form.username" placeholder="用户名" autocomplete="username" size="large" />
+        </el-form-item>
+        <el-form-item label="密码">
+          <el-input v-model="form.password" type="password" placeholder="密码" autocomplete="current-password"
+                    size="large" show-password @keyup.enter="doLogin" />
+        </el-form-item>
+        <el-button type="primary" size="large" class="login-btn" :loading="loading" native-type="submit">
+          {{ loading ? '登录中…' : '登 录' }}
+        </el-button>
+      </el-form>
+    </el-card>
   </div>
 </template>
 
 <style scoped>
-.login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #f5f6fa; }
-.login-card { width: 340px; padding: 2rem; background: #fff; border-radius: 12px; display: flex; flex-direction: column; gap: .8rem; box-shadow: 0 2px 12px rgb(0 0 0 / 8%); }
-.login-card h1 { font-size: 1.1rem; text-align: center; }
-input { padding: .6rem .8rem; border: 1px solid #ddd; border-radius: 8px; }
-button { padding: .6rem; background: #4169e1; color: #fff; border: 0; border-radius: 8px; cursor: pointer; }
-.error { color: #d33; font-size: .85rem; }
+.login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #eef2ff 0%, #f5f6fa 60%); }
+.login-card { width: 380px; border-radius: 14px; }
+.login-card h1 { font-size: 1.15rem; text-align: center; margin: 0 0 .3rem; }
+.subtitle { text-align: center; color: #999; font-size: .8rem; margin: 0 0 1.2rem; }
+.login-btn { width: 100%; margin-top: .4rem; }
 </style>

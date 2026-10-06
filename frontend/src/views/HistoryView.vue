@@ -1,6 +1,7 @@
 <script setup lang="ts">
-// 查询历史（FR-HIS-01/02）+ 详情回看（M2-T4）+ 我的分享管理（FR-HIS-06/07 前端）
+// 查询历史（FR-HIS-01/02）+ 详情回看（M2-T4）+ 我的分享管理（FR-HIS-06/07 前端）——Element Plus 版
 import { onMounted, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { getHistory, getHistoryDetail, getMyShares, revokeShare } from '../api'
 
 interface HistoryItem { id: number; question: string; intent: string; exec_status: string; row_count: number; duration_ms: number }
@@ -15,6 +16,7 @@ const items = ref<HistoryItem[]>([])
 const total = ref(0)
 const page = ref(1)
 const detail = ref<HistoryDetail | null>(null)
+const detailVisible = ref(false)
 const shares = ref<ShareItem[]>([])
 const showShares = ref(false)
 
@@ -27,10 +29,7 @@ async function load() {
 // 详情回看（FR-HIS-01 增强）：SQL/解释/假设/召回明细
 async function openDetail(id: number) {
   detail.value = await getHistoryDetail(id)
-}
-
-function closeDetail() {
-  detail.value = null
+  detailVisible.value = true
 }
 
 // 我的分享管理（FR-HIS-06/07 前端）：列表 + 撤销
@@ -40,8 +39,12 @@ async function toggleShares() {
 }
 
 async function removeShare(id: number) {
+  try {
+    await ElMessageBox.confirm('撤销后接收方将无法访问该分享，确认撤销？', '撤销分享', { type: 'warning' })
+  } catch { return }
   await revokeShare(id)
   shares.value = await getMyShares()
+  ElMessage.success('已撤销')
 }
 
 // PDF 导出（FR-VIS-21）：审计由 ChatView 打印通道记录；此处仅 Excel 导出
@@ -53,6 +56,7 @@ async function exportExcel(id: number) {
   a.download = `query_${id}.xlsx`
   a.click()
   URL.revokeObjectURL(url)
+  ElMessage.success('导出成功')
 }
 
 onMounted(load)
@@ -64,84 +68,84 @@ onMounted(load)
       <h1>查询历史</h1>
       <nav>
         <router-link to="/">返回对话</router-link>
-        <button @click="toggleShares">{{ showShares ? '收起分享' : '我的分享' }}</button>
+        <el-button size="small" @click="toggleShares">{{ showShares ? '收起分享' : '我的分享' }}</el-button>
       </nav>
     </div>
 
     <!-- 我的分享管理（FR-HIS-06/07 前端） -->
-    <section v-if="showShares" class="shares">
-      <h2>我的分享（可撤销，撤销后失效）</h2>
-      <table v-if="shares.length">
-        <thead><tr><th>问题</th><th>有效期至</th><th>状态</th><th>操作</th></tr></thead>
-        <tbody>
-          <tr v-for="s in shares" :key="s.id">
-            <td>{{ s.question }}</td>
-            <td>{{ s.expire_at.slice(0, 10) }}</td>
-            <td>{{ s.revoked ? '已撤销' : '有效' }}</td>
-            <td><button v-if="!s.revoked" class="danger" @click="removeShare(s.id)">撤销</button></td>
-          </tr>
-        </tbody>
-      </table>
-      <p v-else>暂无分享记录</p>
-    </section>
+    <el-card v-if="showShares" class="block-card" shadow="never">
+      <template #header><b>我的分享（可撤销，撤销后失效）</b></template>
+      <el-table v-if="shares.length" :data="shares" size="small" stripe>
+        <el-table-column prop="question" label="问题" min-width="240" show-overflow-tooltip />
+        <el-table-column label="有效期至" width="120">
+          <template #default="{ row }">{{ row.expire_at.slice(0, 10) }}</template>
+        </el-table-column>
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.revoked ? 'info' : 'success'" size="small">{{ row.revoked ? '已撤销' : '有效' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="90">
+          <template #default="{ row }">
+            <el-button v-if="!row.revoked" size="small" type="danger" plain @click="removeShare(row.id)">撤销</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-else description="暂无分享记录" :image-size="60" />
+    </el-card>
 
-    <table>
-      <thead><tr><th>ID</th><th>问题</th><th>意图</th><th>状态</th><th>行数</th><th>耗时</th><th>操作</th></tr></thead>
-      <tbody>
-        <tr v-for="h in items" :key="h.id">
-          <td>{{ h.id }}</td>
-          <td class="q" @click="openDetail(h.id)">{{ h.question }}</td>
-          <td>{{ h.intent }}</td>
-          <td><span :class="h.exec_status">{{ h.exec_status }}</span></td>
-          <td>{{ h.row_count }}</td>
-          <td>{{ h.duration_ms }}ms</td>
-          <td>
-            <button @click="openDetail(h.id)">详情</button>
-            <button @click="exportExcel(h.id)">导出</button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-    <div class="pager">
-      <button :disabled="page <= 1" @click="page--; load()">上一页</button>
-      <span>{{ page }} / {{ Math.max(1, Math.ceil(total / 20)) }}</span>
-      <button :disabled="page * 20 >= total" @click="page++; load()">下一页</button>
-    </div>
+    <el-card shadow="never">
+      <el-table :data="items" size="small" stripe @row-click="(row: HistoryItem) => openDetail(row.id)">
+        <el-table-column prop="id" label="ID" width="70" />
+        <el-table-column prop="question" label="问题" min-width="240" show-overflow-tooltip>
+          <template #default="{ row }"><span class="q">{{ row.question }}</span></template>
+        </el-table-column>
+        <el-table-column prop="intent" label="意图" width="90" />
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.exec_status === 'success' ? 'success' : row.exec_status === 'failed' ? 'danger' : 'warning'"
+                    size="small">{{ row.exec_status }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="row_count" label="行数" width="80" />
+        <el-table-column label="耗时" width="90">
+          <template #default="{ row }">{{ row.duration_ms }}ms</template>
+        </el-table-column>
+        <el-table-column label="操作" width="150">
+          <template #default="{ row }">
+            <el-button size="small" @click.stop="openDetail(row.id)">详情</el-button>
+            <el-button size="small" type="primary" plain @click.stop="exportExcel(row.id)">导出</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-pagination class="pager" layout="prev, pager, next" :total="total" :page-size="20"
+                     :current-page="page" @current-change="(p: number) => { page = p; load() }" />
+    </el-card>
 
     <!-- 详情弹层（FR-HIS-01 增强） -->
-    <div v-if="detail" class="detail-mask" @click.self="closeDetail">
-      <div class="detail-card">
-        <div class="detail-head">
-          <h2>{{ detail.question }}</h2>
-          <button @click="closeDetail">关闭</button>
-        </div>
+    <el-dialog v-model="detailVisible" :title="detail?.question" width="720px" top="6vh">
+      <template v-if="detail">
         <p class="meta">状态 {{ detail.exec_status }} · 耗时 {{ detail.duration_ms }}ms · 自愈重试 {{ detail.retry_count }} 次</p>
-        <h3>口径假设</h3>
-        <ul><li v-for="a in detail.assumptions?.list ?? []" :key="a">{{ a }}</li></ul>
-        <h3>生成 SQL</h3>
-        <pre>{{ detail.generated_sql }}</pre>
-        <h3>SQL 解释</h3>
+        <h4>口径假设</h4>
+        <el-tag v-for="a in detail.assumptions?.list ?? []" :key="a" class="as-tag" type="warning" effect="plain">{{ a }}</el-tag>
+        <p v-if="!detail.assumptions?.list?.length" class="meta">无</p>
+        <h4>生成 SQL</h4>
+        <pre class="sql-pre">{{ detail.generated_sql }}</pre>
+        <h4>SQL 解释</h4>
         <p>{{ detail.explain_text }}</p>
-      </div>
-    </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <style scoped>
-.page { padding: 1.5rem; }
-.header { display: flex; justify-content: space-between; align-items: center; }
-.header nav { display: flex; gap: .6rem; }
-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
-th, td { border: 1px solid #eee; padding: .5rem .8rem; text-align: left; }
+.page { padding: 1.5rem; max-width: 1100px; margin: 0 auto; }
+.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+.header nav { display: flex; gap: .6rem; align-items: center; }
 .q { cursor: pointer; color: #4169e1; }
-.success { color: #52c41a; } .failed { color: #d33; } .clarify, .refused { color: #fa8c16; }
-button { padding: .25rem .7rem; cursor: pointer; }
-.danger { color: #d33; }
-.pager { margin-top: 1rem; display: flex; gap: 1rem; align-items: center; }
-.shares { background: #fafbfc; border: 1px solid #eee; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
-.detail-mask { position: fixed; inset: 0; background: rgb(0 0 0 / 40%); display: flex; align-items: center; justify-content: center; z-index: 10; }
-.detail-card { background: #fff; border-radius: 12px; padding: 1.5rem; width: min(720px, 90vw); max-height: 80vh; overflow-y: auto; }
-.detail-head { display: flex; justify-content: space-between; align-items: center; }
-.detail-card .meta { color: #888; font-size: .8rem; }
-.detail-card pre { background: #f6f8fa; padding: .8rem; border-radius: 8px; overflow-x: auto; white-space: pre-wrap; }
+.block-card { margin-bottom: 1rem; }
+.pager { margin-top: 1rem; justify-content: flex-end; }
+.meta { color: #888; font-size: .8rem; }
+.as-tag { margin-right: .4rem; }
+.sql-pre { background: #f6f8fa; padding: .8rem; border-radius: 8px; overflow-x: auto; white-space: pre-wrap; }
 </style>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 管理后台（FR-ADM-02/03/05 精简版）：数据源接入与扫描、表标注、指标、系统配置
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import {
   annotateTable, createDatasource, createFewShot as createFewShotApi, deleteFewShot as deleteFewShotApi,
   getColumns, getConfigs, getDatasources, getEvalCompare, getEvalReports, getFewShots, getMetrics,
@@ -11,6 +11,13 @@ import {
 type Tab = 'datasource' | 'schema' | 'metric' | 'config' | 'fewshot' | 'uncaptured' | 'rowpolicy' | 'ops' | 'eval'
 const tab = ref<Tab>('datasource')
 const msg = ref('')
+
+// el-tabs 切换时触发懒加载（原按钮 click 逻辑迁移至此）
+watch(tab, (t) => {
+  if (t === 'fewshot' || t === 'rowpolicy') loadFewShots()
+  if (t === 'ops') loadDashboard()
+  if (t === 'eval') loadEvalReports()
+})
 
 // 运营看板（FR-ADM-06，M2-T5）
 interface Dash {
@@ -222,17 +229,21 @@ async function saveConfig(c: { key: string; value: unknown }) {
 
 <template>
   <div class="page">
-    <nav class="tabs">
-      <button :class="{ on: tab === 'datasource' }" @click="tab = 'datasource'">数据源</button>
-      <button :class="{ on: tab === 'schema' }" @click="tab = 'schema'">表标注</button>
-      <button :class="{ on: tab === 'metric' }" @click="tab = 'metric'">指标</button>
-      <button :class="{ on: tab === 'config' }" @click="tab = 'config'">系统配置</button>
-      <button :class="{ on: tab === 'fewshot' }" @click="tab = 'fewshot'; loadFewShots()">样例库与反馈</button>
-      <button :class="{ on: tab === 'rowpolicy' }" @click="tab = 'rowpolicy'; loadFewShots()">行级权限</button>
-      <button :class="{ on: tab === 'ops' }" @click="tab = 'ops'; loadDashboard()">运营看板</button>
-      <button :class="{ on: tab === 'eval' }" @click="tab = 'eval'; loadEvalReports()">评测</button>
-      <router-link to="/" class="back">返回对话</router-link>
-    </nav>
+    <div class="topbar">
+      <router-link to="/" class="back">
+        <el-button size="small" text type="primary">← 返回对话</el-button>
+      </router-link>
+    </div>
+    <el-tabs :model-value="tab" @tab-change="(name: string | number) => tab = name as Tab">
+      <el-tab-pane label="数据源" name="datasource" />
+      <el-tab-pane label="表标注" name="schema" />
+      <el-tab-pane label="指标" name="metric" />
+      <el-tab-pane label="系统配置" name="config" />
+      <el-tab-pane label="样例库与反馈" name="fewshot" />
+      <el-tab-pane label="行级权限" name="rowpolicy" />
+      <el-tab-pane label="运营看板" name="ops" />
+      <el-tab-pane label="评测" name="eval" />
+    </el-tabs>
     <p v-if="msg" class="msg">{{ msg }}</p>
 
     <!-- 运营看板（FR-ADM-06，M2-T5） -->

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-// 主对话界面（UX-01）：左侧会话列表 + 右侧对话流；SSE 流式（FR-UI-05）
+// 主对话界面（UX-01）：左侧会话列表 + 右侧对话流；SSE 流式（FR-UI-05）—— Element Plus 版
 import * as echarts from 'echarts'
+import { ElMessage } from 'element-plus'
 import { nextTick, onMounted, ref } from 'vue'
 import {
   auditPdfExport, createConversation, createFeedback, currentUser, getConversations, getDatasources,
@@ -10,10 +11,10 @@ import {
 interface ChatMessage {
   role: 'user' | 'assistant'
   question?: string
-  text?: string           // 结论文本 / 系统提示
+  text?: string
   sql?: string
   explain?: string
-  assumptions?: string[]  // 口径假设（UX-04 视觉突出）
+  assumptions?: string[]
   columns?: string[]
   rows?: unknown[][]
   chartType?: string
@@ -88,7 +89,6 @@ async function send(question?: string) {
     msg.error = err instanceof Error ? err.message : '网络异常'
   } finally {
     busy.value = false
-    // 刷新会话列表（新会话由后端创建时）
     getConversations().then((cs) => (conversations.value = cs))
     scrollBottom()
   }
@@ -120,7 +120,6 @@ function handleEvent(msg: ChatMessage, e: QueryEvent) {
     msg.errorCode = Number(data.code)
   } else if (event === 'done') {
     msg.queryId = Number(data.query_id)
-    // 查询完成后拉取建议追问（FR-UI-04）
     if (msg.queryId) {
       getFollowups(msg.queryId).then((fs) => { msg.followups = fs; scrollBottom() }).catch(() => {})
     }
@@ -148,7 +147,7 @@ function renderChart(el: HTMLElement, msg: ChatMessage) {
   }
 }
 
-// 图表一键切换（FR-VIS-03/04）：服务端基于缓存数据重建 option，零请求重查
+// 图表一键切换（FR-VIS-03/04）：服务端基于缓存结果重建 option，零请求重查
 async function switchChartType(msg: ChatMessage, chartType: string) {
   if (!msg.queryId) return
   try {
@@ -183,9 +182,10 @@ async function sendFeedback(msg: ChatMessage, rating: 'up' | 'down') {
     await createFeedback(msg.queryId, { rating, correction_sql: msg.correctionSql })
     msg.feedbackSent = true
     msg.showCorrection = false
+    ElMessage.success('反馈已提交，感谢！管理员审核后可用于改进回答')
   } catch (e: unknown) {
     const resp = (e as { response?: { data?: { message?: string } } }).response
-    alert(resp?.data?.message ?? '反馈提交失败')
+    ElMessage.error(resp?.data?.message ?? '反馈提交失败')
   }
 }
 
@@ -196,7 +196,6 @@ function doLogout() {
   })
 }
 </script>
-
 <template>
   <div class="chat-layout">
     <!-- 左侧会话列表（UX-01） -->
@@ -210,17 +209,18 @@ function doLogout() {
           <a href="#" @click.prevent="doLogout">退出</a>
         </nav>
       </div>
-      <button class="new-conv" @click="newConv">+ 新会话</button>
-      <ul>
-        <li v-for="c in conversations" :key="c.id" :class="{ active: c.id === activeConv }" @click="selectConv(c.id)">
+      <el-button class="new-conv" plain type="primary" @click="newConv">+ 新会话</el-button>
+      <el-scrollbar class="conv-list">
+        <div v-for="c in conversations" :key="c.id"
+             :class="['conv-item', { active: c.id === activeConv }]" @click="selectConv(c.id)">
           {{ c.title || '会话 ' + c.id }}
-        </li>
-      </ul>
+        </div>
+      </el-scrollbar>
       <div class="ds-picker" v-if="datasources.length">
-        数据源：
-        <select v-model.number="datasourceId">
-          <option v-for="d in datasources" :key="d.id" :value="d.id">{{ d.name }}</option>
-        </select>
+        <span>数据源</span>
+        <el-select v-model="datasourceId" size="small" placeholder="选择数据源">
+          <el-option v-for="d in datasources" :key="d.id" :label="d.name" :value="d.id" />
+        </el-select>
       </div>
     </aside>
 
@@ -228,9 +228,9 @@ function doLogout() {
     <main class="chat-main" ref="chatBody">
       <div v-if="!messages.length" class="empty-guide">
         <p>试试这样问：</p>
-        <button @click="send('上个月哪个店铺GMV最高？')">上个月哪个店铺GMV最高？</button>
-        <button @click="send('这个季度退货率超过10%的商品有哪些？')">这个季度退货率超过10%的商品有哪些？</button>
-        <button @click="send('对比一下华东和华南的销售趋势')">对比一下华东和华南的销售趋势</button>
+        <el-button plain @click="send('上个月哪个店铺GMV最高？')">上个月哪个店铺GMV最高？</el-button>
+        <el-button plain @click="send('这个季度退货率超过10%的商品有哪些？')">这个季度退货率超过10%的商品有哪些？</el-button>
+        <el-button plain @click="send('对比一下华东和华南的销售趋势')">对比一下华东和华南的销售趋势</el-button>
       </div>
 
       <div v-for="(m, i) in messages" :key="i" :class="['msg', m.role]">
@@ -238,66 +238,70 @@ function doLogout() {
 
         <div v-else class="assistant-card">
           <!-- 假设声明：视觉突出，不可折叠（UX-04） -->
-          <div v-if="m.assumptions?.length" class="assumption-banner">
-            ⚠ 口径假设：{{ m.assumptions.join('；') }}
-          </div>
+          <el-alert v-if="m.assumptions?.length" type="warning" :closable="false" class="banner"
+                    :title="`口径假设：${m.assumptions.join('；')}`" />
 
           <p v-if="m.text" class="stage-text">{{ m.text }}</p>
 
           <!-- 澄清卡片（FR-UI-07）：点选完成澄清 -->
-          <div v-if="m.clarify" class="clarify">
+          <div v-if="m.clarify" class="pill-group">
             <p>{{ m.clarify.question }}</p>
-            <button v-for="opt in m.clarify.options" :key="opt" @click="sendClarifyOption(opt)">{{ opt }}</button>
+            <el-button v-for="opt in m.clarify.options" :key="opt" size="small" round @click="sendClarifyOption(opt)">
+              {{ opt }}
+            </el-button>
           </div>
 
           <!-- 错误态（FR-UI-10）：可行动建议 -->
-          <div v-if="m.error" class="error-box">
-            <p>{{ m.error }}</p>
-            <button @click="retryLast(m)">重试</button>
-          </div>
+          <el-alert v-if="m.error" type="error" :closable="false" class="banner" :title="m.error">
+            <el-button size="small" type="danger" plain @click="retryLast(m)">重试</el-button>
+          </el-alert>
 
           <!-- 四要素：结论 + 图表/表格 + SQL 解释（UX-02） -->
           <div v-if="m.chartType" class="result-area">
             <!-- 图表一键切换（FR-VIS-03/04）：复用缓存结果，零请求重查 -->
             <div v-if="m.queryId && m.chartType !== 'empty'" class="chart-switch">
-              <button v-for="t in ['line', 'bar', 'pie', 'table']" :key="t"
-                      :class="{ on: m.chartType === t }" @click="switchChartType(m, t)">
-                {{ { line: '折线', bar: '柱状', pie: '饼图', table: '表格' }[t as 'line'] }}
-              </button>
-              <button v-if="!m.pdfDone" @click="exportPdf(m)">打印/PDF</button>
-              <span v-if="m.pdfDone" class="fb-ok">已记录导出审计</span>
+              <el-radio-group v-model="m.chartType" size="small"
+                              @change="(t: string | number | boolean | undefined) => switchChartType(m, String(t))">
+                <el-radio-button value="line">折线</el-radio-button>
+                <el-radio-button value="bar">柱状</el-radio-button>
+                <el-radio-button value="pie">饼图</el-radio-button>
+                <el-radio-button value="table">表格</el-radio-button>
+              </el-radio-group>
+              <el-button size="small" :disabled="m.pdfDone" @click="exportPdf(m)">打印/PDF</el-button>
+              <el-tag v-if="m.pdfDone" type="success" size="small">已记录导出审计</el-tag>
             </div>
-            <div v-if="m.chartType === 'empty'" class="empty-card">查询成功但无匹配数据</div>
-            <div v-else-if="m.chartType === 'table'" class="table-box">
-              <table>
-                <thead><tr><th v-for="c in m.columns" :key="c">{{ c }}</th></tr></thead>
-                <tbody><tr v-for="(r, ri) in m.rows" :key="ri"><td v-for="(v, vi) in r" :key="vi">{{ formatValue(v) }}</td></tr></tbody>
-              </table>
-            </div>
+            <el-alert v-if="m.chartType === 'empty'" type="info" :closable="false" title="查询成功但无匹配数据" />
+            <el-table v-else-if="m.chartType === 'table'" :data="m.rows" size="small" border max-height="360">
+              <el-table-column v-for="(c, ci) in m.columns" :key="c" :label="c" min-width="100">
+                <template #default="{ row }">{{ formatValue(row[ci]) }}</template>
+              </el-table-column>
+            </el-table>
             <div v-else class="chart-box" :ref="(el) => renderChart(el as HTMLElement, m)" />
             <p class="chart-reason">{{ m.chartReason }}</p>
           </div>
 
-          <details v-if="m.sql" class="sql-details">
-            <summary>查看 SQL 与解释</summary>
-            <pre>{{ m.sql }}</pre>
-            <p>{{ m.explain }}</p>
-          </details>
+          <el-collapse v-if="m.sql" class="sql-collapse">
+            <el-collapse-item title="查看 SQL 与解释" name="sql">
+              <pre class="sql-pre">{{ m.sql }}</pre>
+              <p>{{ m.explain }}</p>
+            </el-collapse-item>
+          </el-collapse>
 
           <!-- 建议追问（FR-UI-04） -->
-          <div v-if="m.followups?.length" class="followups">
-            <button v-for="f in m.followups" :key="f" :disabled="busy" @click="send(f)">{{ f }}</button>
+          <div v-if="m.followups?.length" class="pill-group">
+            <el-button v-for="f in m.followups" :key="f" size="small" round :disabled="busy" @click="send(f)">
+              {{ f }}
+            </el-button>
           </div>
 
           <!-- 反馈（FR-UI-08）：赞踩 + 纠错，进入样例库闭环 -->
           <div v-if="m.queryId && !m.feedbackSent" class="feedback-bar">
-            <button @click="sendFeedback(m, 'up')">👍</button>
-            <button @click="m.showCorrection = !m.showCorrection">👎 纠错</button>
-            <span v-if="m.feedbackSent" class="fb-ok">反馈已提交，感谢！管理员审核后可用于改进回答。</span>
+            <el-button size="small" circle @click="sendFeedback(m, 'up')">👍</el-button>
+            <el-button size="small" round @click="m.showCorrection = !m.showCorrection">👎 纠错</el-button>
           </div>
           <div v-if="m.showCorrection && !m.feedbackSent" class="correction-box">
-            <textarea v-model="m.correctionSql" rows="3" placeholder="粘贴正确的 SQL…" />
-            <button @click="sendFeedback(m, 'down')">提交纠错</button>
+            <el-input v-model="m.correctionSql" type="textarea" :rows="3" placeholder="粘贴正确的 SQL…" />
+            <el-button type="primary" @click="sendFeedback(m, 'down')">提交纠错</el-button>
           </div>
         </div>
       </div>
@@ -305,52 +309,44 @@ function doLogout() {
 
     <!-- 输入区 -->
     <footer class="input-bar">
-      <input
-        v-model="input" :disabled="busy" placeholder="用自然语言提问，例如：上个月哪个店铺GMV最高？"
-        @keydown.enter="send()"
-      />
-      <button :disabled="busy" @click="send()">发送</button>
+      <el-input v-model="input" :disabled="busy" size="large" clearable
+                placeholder="用自然语言提问，例如：上个月哪个店铺GMV最高？" @keydown.enter="send()" />
+      <el-button type="primary" size="large" :disabled="busy" @click="send()">发送</el-button>
     </footer>
   </div>
 </template>
 
 <style scoped>
-.chat-layout { display: grid; grid-template-columns: 240px 1fr; grid-template-rows: 1fr auto; height: 100vh; }
-.sidebar { grid-row: 1 / 3; border-right: 1px solid #e5e6eb; padding: 1rem; overflow-y: auto; background: #fafbfc; }
+.chat-layout { display: grid; grid-template-columns: 250px 1fr; grid-template-rows: 1fr auto; height: 100vh; }
+.sidebar { grid-row: 1 / 3; border-right: 1px solid var(--el-border-color-lighter); padding: 1rem; display: flex; flex-direction: column; background: var(--el-fill-color-lighter); }
 .user-bar { display: flex; justify-content: space-between; font-size: .8rem; margin-bottom: .8rem; }
 .user-bar nav { display: flex; gap: .4rem; }
-.new-conv { width: 100%; padding: .5rem; margin-bottom: .8rem; border: 1px dashed #4169e1; color: #4169e1; background: none; border-radius: 8px; cursor: pointer; }
-.sidebar ul { list-style: none; padding: 0; }
-.sidebar li { padding: .5rem; border-radius: 6px; cursor: pointer; font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sidebar li.active { background: #eef2ff; }
-.ds-picker { font-size: .8rem; margin-top: 1rem; }
-.ds-picker select { width: 100%; margin-top: .3rem; }
+.new-conv { width: 100%; margin-bottom: .8rem; border-style: dashed; }
+.conv-list { flex: 1; }
+.conv-item { padding: .5rem .6rem; border-radius: 6px; cursor: pointer; font-size: .9rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv-item:hover { background: var(--el-fill-color); }
+.conv-item.active { background: var(--el-color-primary-light-9); color: var(--el-color-primary); }
+.ds-picker { font-size: .8rem; margin-top: 1rem; display: flex; flex-direction: column; gap: .3rem; }
 .chat-main { overflow-y: auto; padding: 1.5rem; }
-.empty-guide button { display: block; margin: .5rem 0; padding: .6rem 1rem; border: 1px solid #ddd; background: #fff; border-radius: 8px; cursor: pointer; }
+.empty-guide .el-button { margin: .4rem .4rem 0 0; }
 .msg { margin-bottom: 1rem; }
-.user-bubble { background: #4169e1; color: #fff; padding: .6rem 1rem; border-radius: 12px 12px 0 12px; max-width: 70%; margin-left: auto; }
-.assistant-card { background: #fff; border: 1px solid #e5e6eb; border-radius: 12px; padding: 1rem; max-width: 90%; }
-.assumption-banner { background: #fff7e6; border: 1px solid #ffd591; padding: .5rem .8rem; border-radius: 8px; margin-bottom: .8rem; color: #ad6800; }
+.user-bubble { background: var(--el-color-primary); color: #fff; padding: .6rem 1rem;
+  border-radius: 12px 12px 0 12px; max-width: 70%; margin-left: auto; width: fit-content; }
+.assistant-card { background: #fff; border: 1px solid var(--el-border-color-lighter);
+  border-radius: 12px; padding: 1rem; max-width: 90%; width: fit-content; min-width: 320px; }
+.banner { margin-bottom: .8rem; }
 .stage-text { color: #888; }
-.clarify button, .followups button { margin: .2rem .4rem .2rem 0; padding: .35rem .8rem; border: 1px solid #4169e1; color: #4169e1; background: none; border-radius: 16px; cursor: pointer; }
-.error-box { background: #fff1f0; border: 1px solid #ffa39e; padding: .8rem; border-radius: 8px; }
-.error-box button { margin-top: .5rem; padding: .3rem .8rem; border: 1px solid #d33; color: #d33; background: none; border-radius: 6px; cursor: pointer; }
-.chart-box { height: 320px; }
-.table-box { overflow-x: auto; }
-.table-box table { border-collapse: collapse; font-size: .85rem; }
-.table-box th, .table-box td { border: 1px solid #eee; padding: .4rem .8rem; }
-.chart-switch { display: flex; gap: .3rem; margin-bottom: .5rem; }
-.chart-switch button { border: 1px solid #ddd; background: #fff; border-radius: 6px; padding: .2rem .6rem; cursor: pointer; font-size: .8rem; }
-.chart-switch button.on { background: #4169e1; color: #fff; border-color: #4169e1; }
-.chart-reason { color: #999; font-size: .8rem; }
+.pill-group { display: flex; flex-wrap: wrap; gap: .4rem; margin: .4rem 0; align-items: center; }
+.pill-group p { width: 100%; margin: 0; }
+.chart-box { height: 320px; width: 560px; }
+.chart-switch { display: flex; gap: .5rem; margin-bottom: .5rem; align-items: center; }
+.chart-reason { color: #999; font-size: .8rem; margin: .4rem 0 0; }
 .feedback-bar { margin-top: .6rem; display: flex; gap: .4rem; align-items: center; }
-.feedback-bar button { border: 1px solid #ddd; background: #fff; border-radius: 6px; padding: .2rem .6rem; cursor: pointer; }
-.fb-ok { color: #52c41a; font-size: .8rem; }
-.correction-box { margin-top: .6rem; display: flex; gap: .5rem; }
-.correction-box textarea { flex: 1; font-family: monospace; border: 1px solid #ddd; border-radius: 6px; }
-.correction-box button { align-self: flex-end; padding: .4rem .8rem; background: #4169e1; color: #fff; border: 0; border-radius: 6px; cursor: pointer; }
-.sql-details pre { background: #f6f8fa; padding: .8rem; border-radius: 8px; overflow-x: auto; }
-.input-bar { display: flex; gap: .6rem; padding: 1rem; border-top: 1px solid #e5e6eb; }
-.input-bar input { flex: 1; padding: .7rem 1rem; border: 1px solid #ddd; border-radius: 10px; }
-.input-bar button { padding: .7rem 1.6rem; background: #4169e1; color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+.correction-box { margin-top: .6rem; display: flex; gap: .5rem; align-items: flex-end; }
+.correction-box .el-input { flex: 1; }
+.sql-collapse { margin-top: .5rem; }
+.sql-pre { background: #f6f8fa; padding: .8rem; border-radius: 8px; overflow-x: auto; margin: 0; }
+.input-bar { display: flex; gap: .6rem; padding: 1rem; border-top: 1px solid var(--el-border-color-lighter); }
+.input-bar .el-input { flex: 1; }
 </style>
