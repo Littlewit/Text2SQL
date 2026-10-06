@@ -46,7 +46,7 @@ onMounted(load)
 
 <template>
   <div class="page">
-    <div class="header">
+    <div class="page-header">
       <h1>我的收藏</h1>
       <router-link to="/">返回对话</router-link>
     </div>
@@ -77,5 +77,5 @@ onMounted(load)
 
 <style scoped>
 .page { padding: 1.5rem; max-width: 1100px; margin: 0 auto; }
-.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+.page-header h1 { color: var(--el-text-color-primary); }
 </style>

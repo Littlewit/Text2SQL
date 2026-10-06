@@ -66,7 +66,7 @@ onMounted(load)
 
 <template>
   <div class="page">
-    <div class="header">
+    <div class="page-header">
       <h1>查询历史</h1>
       <nav>
         <router-link to="/">返回对话</router-link>
@@ -142,12 +142,12 @@ onMounted(load)
 
 <style scoped>
 .page { padding: 1.5rem; max-width: 1100px; margin: 0 auto; }
-.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
-.header nav { display: flex; gap: .6rem; align-items: center; }
-.q { cursor: pointer; color: #4169e1; }
+.page-header nav { display: flex; gap: .6rem; align-items: center; }
+.q { cursor: pointer; color: var(--el-color-primary); }
 .block-card { margin-bottom: 1rem; }
 .pager { margin-top: 1rem; justify-content: flex-end; }
-.meta { color: #888; font-size: .8rem; }
+.meta { color: var(--el-text-color-secondary); font-size: .8rem; }
 .as-tag { margin-right: .4rem; }
-.sql-pre { background: #f6f8fa; padding: .8rem; border-radius: 8px; overflow-x: auto; white-space: pre-wrap; }
+.sql-pre { background: var(--el-fill-color-light); padding: .8rem; border-radius: 8px;
+  overflow-x: auto; white-space: pre-wrap; font-size: .82rem; }
 </style>

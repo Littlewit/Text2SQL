@@ -214,6 +214,10 @@ function doLogout() {
   <div class="chat-layout">
     <!-- 左侧会话列表（UX-01） -->
     <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">T2</div>
+        <div class="brand-name">Text2SQL</div>
+      </div>
       <div class="user-bar">
         <span>{{ user?.username }}</span>
         <nav>
@@ -241,7 +245,8 @@ function doLogout() {
     <!-- 右侧对话流 -->
     <main class="chat-main" ref="chatBody">
       <div v-if="!messages.length" class="empty-guide">
-        <p>试试这样问：</p>
+        <p class="hero">问数据，不必写 SQL</p>
+        <p>用一句话查询业务数据库，试试这样问：</p>
         <el-button plain @click="send('上个月哪个店铺GMV最高？')">上个月哪个店铺GMV最高？</el-button>
         <el-button plain @click="send('这个季度退货率超过10%的商品有哪些？')">这个季度退货率超过10%的商品有哪些？</el-button>
         <el-button plain @click="send('对比一下华东和华南的销售趋势')">对比一下华东和华南的销售趋势</el-button>
@@ -323,44 +328,80 @@ function doLogout() {
 
     <!-- 输入区 -->
     <footer class="input-bar">
-      <el-input v-model="input" :disabled="busy" size="large" clearable
-                placeholder="用自然语言提问，例如：上个月哪个店铺GMV最高？" @keydown.enter="send()" />
-      <el-button type="primary" size="large" :disabled="busy" @click="send()">发送</el-button>
+      <div class="input-shell">
+        <el-input v-model="input" :disabled="busy" size="large" clearable
+                  placeholder="用自然语言提问，例如：上个月哪个店铺GMV最高？" @keydown.enter="send()" />
+        <el-button type="primary" size="large" :disabled="busy" @click="send()">发送</el-button>
+      </div>
     </footer>
   </div>
 </template>
 
 <style scoped>
-.chat-layout { display: grid; grid-template-columns: 250px 1fr; grid-template-rows: 1fr auto; height: 100vh; }
-.sidebar { grid-row: 1 / 3; border-right: 1px solid var(--el-border-color-lighter); padding: 1rem; display: flex; flex-direction: column; background: var(--el-fill-color-lighter); }
-.user-bar { display: flex; justify-content: space-between; font-size: .8rem; margin-bottom: .8rem; }
-.user-bar nav { display: flex; gap: .4rem; }
-.new-conv { width: 100%; margin-bottom: .8rem; border-style: dashed; }
+.chat-layout { display: grid; grid-template-columns: 262px 1fr; grid-template-rows: 1fr auto; height: 100vh; }
+
+/* ---- Sidebar ---- */
+.sidebar { grid-row: 1 / 3; border-right: 1px solid var(--el-border-color-lighter);
+  padding: 1rem .8rem; display: flex; flex-direction: column;
+  background: var(--el-bg-color); }
+.brand { display: flex; align-items: center; gap: .5rem; padding: .2rem .4rem .9rem; }
+.brand-logo { width: 30px; height: 30px; border-radius: 9px; background: var(--t2s-grad);
+  display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: .95rem; }
+.brand-name { font-weight: 700; font-size: .95rem; letter-spacing: .3px; }
+.user-bar { display: flex; justify-content: space-between; align-items: center; font-size: .8rem;
+  margin-bottom: .8rem; padding: .45rem .6rem; background: var(--el-fill-color-light); border-radius: 8px; }
+.user-bar nav { display: flex; gap: .5rem; }
+.user-bar a { color: var(--el-text-color-secondary); transition: color .15s; }
+.user-bar a:hover { color: var(--el-color-primary); }
+.new-conv { width: 100%; margin-bottom: .8rem; }
 .conv-list { flex: 1; }
-.conv-item { padding: .5rem .6rem; border-radius: 6px; cursor: pointer; font-size: .9rem;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv-item { padding: .55rem .7rem; border-radius: 8px; cursor: pointer; font-size: .9rem;
+  margin-bottom: 2px; position: relative; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--el-text-color-regular); transition: background .15s, color .15s; }
 .conv-item:hover { background: var(--el-fill-color); }
-.conv-item.active { background: var(--el-color-primary-light-9); color: var(--el-color-primary); }
-.ds-picker { font-size: .8rem; margin-top: 1rem; display: flex; flex-direction: column; gap: .3rem; }
-.chat-main { overflow-y: auto; padding: 1.5rem; }
-.empty-guide .el-button { margin: .4rem .4rem 0 0; }
-.msg { margin-bottom: 1rem; }
-.user-bubble { background: var(--el-color-primary); color: #fff; padding: .6rem 1rem;
-  border-radius: 12px 12px 0 12px; max-width: 70%; margin-left: auto; width: fit-content; }
-.assistant-card { background: #fff; border: 1px solid var(--el-border-color-lighter);
-  border-radius: 12px; padding: 1rem; max-width: 90%; width: fit-content; min-width: 320px; }
-.banner { margin-bottom: .8rem; }
-.stage-text { color: #888; }
+.conv-item.active { background: var(--el-color-primary-light-9); color: var(--el-color-primary); font-weight: 600; }
+.conv-item.active::before { content: ''; position: absolute; left: 0; top: 20%; bottom: 20%;
+  width: 3px; border-radius: 2px; background: var(--el-color-primary); }
+.ds-picker { font-size: .8rem; margin-top: 1rem; display: flex; flex-direction: column; gap: .3rem;
+  color: var(--el-text-color-secondary); }
+
+/* ---- Chat main ---- */
+.chat-main { overflow-y: auto; padding: 1.6rem 2rem; background: var(--el-bg-color-page); }
+.empty-guide { text-align: center; margin-top: 14vh; }
+.empty-guide .hero { font-size: 1.4rem; font-weight: 700; margin-bottom: .4rem;
+  background: var(--t2s-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.empty-guide p { color: var(--el-text-color-secondary); }
+.empty-guide .el-button { margin: .8rem .4rem 0 0; border-radius: 18px; }
+.msg { margin-bottom: 1.1rem; }
+.user-bubble { background: var(--t2s-grad); color: #fff; padding: .65rem 1.05rem;
+  border-radius: 14px 14px 2px 14px; max-width: 70%; margin-left: auto; width: fit-content;
+  box-shadow: 0 2px 10px rgb(76 110 245 / 25%); }
+.assistant-card { background: var(--el-bg-color); border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px 14px 14px 14px; padding: 1rem 1.1rem; max-width: 90%; width: fit-content;
+  min-width: 340px; box-shadow: 0 1px 4px rgb(16 24 40 / 5%); }
+.banner { margin-bottom: .8rem; border-radius: 8px; }
+.stage-text { color: var(--el-text-color-secondary); }
 .pill-group { display: flex; flex-wrap: wrap; gap: .4rem; margin: .4rem 0; align-items: center; }
-.pill-group p { width: 100%; margin: 0; }
+.pill-group p { width: 100%; margin: 0; color: var(--el-text-color-regular); }
 .chart-box { height: 320px; width: 560px; }
 .chart-switch { display: flex; gap: .5rem; margin-bottom: .5rem; align-items: center; }
-.chart-reason { color: #999; font-size: .8rem; margin: .4rem 0 0; }
+.chart-reason { color: var(--el-text-color-placeholder); font-size: .8rem; margin: .4rem 0 0; }
 .feedback-bar { margin-top: .6rem; display: flex; gap: .4rem; align-items: center; }
 .correction-box { margin-top: .6rem; display: flex; gap: .5rem; align-items: flex-end; }
 .correction-box .el-input { flex: 1; }
 .sql-collapse { margin-top: .5rem; }
-.sql-pre { background: #f6f8fa; padding: .8rem; border-radius: 8px; overflow-x: auto; margin: 0; }
-.input-bar { display: flex; gap: .6rem; padding: 1rem; border-top: 1px solid var(--el-border-color-lighter); }
-.input-bar .el-input { flex: 1; }
+.sql-pre { background: var(--el-fill-color-light); padding: .8rem; border-radius: 8px;
+  overflow-x: auto; margin: 0; font-size: .82rem; }
+
+/* ---- Input bar (floating shell) ---- */
+.input-bar { padding: .9rem 2rem 1.2rem; border-top: 1px solid var(--el-border-color-lighter);
+  background: var(--el-bg-color); }
+.input-shell { display: flex; gap: .6rem; max-width: 860px; margin: 0 auto;
+  padding: .35rem .35rem .35rem .6rem; border: 1px solid var(--el-border-color);
+  border-radius: 14px; background: var(--el-bg-color); box-shadow: 0 2px 12px rgb(16 24 40 / 6%);
+  transition: box-shadow .2s, border-color .2s; }
+.input-shell:focus-within { border-color: var(--el-color-primary);
+  box-shadow: 0 4px 18px rgb(76 110 245 / 18%); }
+.input-shell .el-input { flex: 1; }
+.input-shell .el-input__wrapper { box-shadow: none !important; background: transparent; }
 </style>

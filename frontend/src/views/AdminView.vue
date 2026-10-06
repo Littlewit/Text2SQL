@@ -243,6 +243,7 @@ function saveConfigRow(row: Record<string, unknown>) {
 <template>
   <div class="page">
     <div class="topbar">
+      <h1 style="font-size: 1.2rem; margin: 0">管理后台</h1>
       <router-link to="/" class="back">
         <el-button size="small" text type="primary">← 返回对话</el-button>
       </router-link>
@@ -567,6 +568,7 @@ function saveConfigRow(row: Record<string, unknown>) {
 </template>
 
 <style scoped>
+.topbar { display: flex; justify-content: space-between; align-items: center; }
 .ops-tools { display: flex; gap: .6rem; align-items: center; margin-bottom: .8rem; }
 .cleanup-msg { color: #52c41a; font-size: .85rem; }
 .cards { display: flex; gap: .6rem; flex-wrap: wrap; margin-bottom: 1rem; }

@@ -50,9 +50,9 @@ async function doLogin() {
 
 <style scoped>
 .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, #eef2ff 0%, #f5f6fa 60%); }
-.login-card { width: 380px; border-radius: 14px; }
-.login-card h1 { font-size: 1.15rem; text-align: center; margin: 0 0 .3rem; }
-.subtitle { text-align: center; color: #999; font-size: .8rem; margin: 0 0 1.2rem; }
-.login-btn { width: 100%; margin-top: .4rem; }
+  background: linear-gradient(135deg, #edf0fe 0%, #f7f8fa 55%, #f3effe 100%); }
+.login-card { width: 390px; border-radius: 16px; padding: .4rem .4rem .2rem; }
+.login-card h1 { font-size: 1.2rem; text-align: center; margin: 0 0 .3rem; letter-spacing: .5px; }
+.subtitle { text-align: center; color: var(--el-text-color-secondary); font-size: .8rem; margin: 0 0 1.2rem; }
+.login-btn { width: 100%; margin-top: .4rem; --el-button-box-shadow: none; }
 </style>
