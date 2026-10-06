@@ -61,10 +61,10 @@ onMounted(load)
         </el-table-column>
         <el-table-column label="操作" width="150">
           <template #default="{ row }">
-            <el-button size="small" type="primary" plain :loading="running === row.id" @click="run(row)">
+            <el-button size="small" type="primary" plain :loading="running === row.id" @click="run(row as Fav)">
               {{ running === row.id ? '执行中…' : '执行' }}
             </el-button>
-            <el-button size="small" type="danger" plain @click="remove(row)">删除</el-button>
+            <el-button size="small" type="danger" plain @click="remove(row as Fav)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>

@@ -108,6 +108,7 @@ const dsForm = ref({ name: '', host: 'localhost', port: 5433, db_name: '', reado
 
 // Schema 标注
 const selectedDs = ref(0)
+const scanning = ref(false)
 const tables = ref<{ id: number; table_name: string; cn_name: string | null; included: boolean; annotation_score: number }[]>([])
 const selectedTable = ref(0)
 const columns = ref<{ id: number; column_name: string; cn_name: string | null; description: string | null }[]>([])
@@ -185,17 +186,24 @@ async function addDatasource() {
   try {
     const ds = await createDatasource(dsForm.value)
     const test = await testDatasource(ds.id)
-    msg.value = `接入成功，连通性测试：${test.ok}（${test.latency_ms}ms）`
+    ElMessage.success(`接入成功，连通性测试：${test.ok}（${test.latency_ms}ms）`)
     await loadAll()
   } catch (e: unknown) {
-    msg.value = (e as { response?: { data?: { message?: string } } }).response?.data?.message ?? '接入失败'
+    ElMessage.error((e as { response?: { data?: { message?: string } } }).response?.data?.message ?? '接入失败')
   }
 }
 
 async function scan() {
-  const stats = await scanDatasource(selectedDs.value)
-  msg.value = `扫描完成：${stats.tables} 表 / ${stats.columns} 字段（新增 ${stats.new_tables}/${stats.new_columns}）`
-  await loadTables()
+  scanning.value = true
+  try {
+    const stats = await scanDatasource(selectedDs.value)
+    ElMessage.success(`扫描完成：${stats.tables} 表 / ${stats.columns} 字段（新增 ${stats.new_tables}/${stats.new_columns}）`)
+    await loadTables()
+  } catch (e: unknown) {
+    ElMessage.error((e as { response?: { data?: { message?: string } } }).response?.data?.message ?? '扫描失败')
+  } finally {
+    scanning.value = false
+  }
 }
 
 async function loadTables() {
@@ -209,7 +217,7 @@ async function pickTable(id: number) {
 
 async function saveAnnotation(t: { id: number; cn_name: string | null; table_name?: string }) {
   await annotateTable(t.id, { cn_name: t.cn_name, included: true })
-  msg.value = `已保存并重新向量化：${t.table_name ?? t.id}`
+  ElMessage.success(`已保存并重新向量化：${t.table_name ?? t.id}`)
   await loadTables()
 }
 
@@ -218,12 +226,12 @@ async function saveMetric() {
   const { createMetricApi } = await import('../api')
   await createMetricApi(metricForm.value)
   metrics.value = await getMetrics()
-  msg.value = '指标已创建并向量化'
+  ElMessage.success('指标已创建并向量化')
 }
 
 async function saveConfig(c: { key: string; value: unknown }) {
   await patchConfig(c.key, c.value)
-  msg.value = `配置 ${c.key} 已更新（留痕审计）`
+  ElMessage.success(`配置 ${c.key} 已更新（留痕审计）`)
 }
 </script>
 
@@ -250,12 +258,12 @@ async function saveConfig(c: { key: string; value: unknown }) {
     <section v-if="tab === 'ops'">
       <h2>运营看板（近 {{ dashboardDays }} 天）</h2>
       <div class="ops-tools">
-        <select v-model.number="dashboardDays" @change="loadDashboard()">
-          <option :value="1">近 1 天</option>
-          <option :value="7">近 7 天</option>
-          <option :value="30">近 30 天</option>
-        </select>
-        <button @click="runCleanup">清理超期审计/历史（先预检）</button>
+        <el-select v-model="dashboardDays" style="width: 110px" @change="loadDashboard()">
+          <el-option :value="1" label="近 1 天" />
+          <el-option :value="7" label="近 7 天" />
+          <el-option :value="30" label="近 30 天" />
+        </el-select>
+        <el-button type="warning" plain @click="runCleanup">清理超期审计/历史（先预检）</el-button>
         <span v-if="cleanupMsg" class="cleanup-msg">{{ cleanupMsg }}</span>
       </div>
       <div v-if="dash" class="cards">
@@ -293,12 +301,12 @@ async function saveConfig(c: { key: string; value: unknown }) {
     <section v-if="tab === 'eval'">
       <h2>评测管理</h2>
       <div class="ops-tools">
-        <button @click="triggerEval('offline')">跑离线评测（安全/时间解析，秒级）</button>
-        <button @click="triggerEval('full')">跑全量评测（含真实 LLM，数分钟）</button>
-        <select v-model="cmpB">
-          <option :value="0" disabled>对比基线…</option>
-          <option v-for="r in evalReports.filter((x) => x.status === 'done')" :key="r.id" :value="r.id">#{{ r.id }} ({{ (r.pass_rate * 100).toFixed(1) }}%)</option>
-        </select>
+        <el-button type="primary" plain @click="triggerEval('offline')">跑离线评测（安全/时间解析，秒级）</el-button>
+        <el-button type="primary" @click="triggerEval('full')">跑全量评测（含真实 LLM，数分钟）</el-button>
+        <el-select v-model="cmpB" style="width: 200px" placeholder="对比基线…">
+          <el-option v-for="r in evalReports.filter((x) => x.status === 'done')" :key="r.id"
+                     :value="r.id" :label="`#${r.id} (${(r.pass_rate * 100).toFixed(1)}%)`" />
+        </el-select>
       </div>
       <p v-if="evalMsg" class="cleanup-msg">{{ evalMsg }}</p>
       <table>
@@ -348,21 +356,28 @@ async function saveConfig(c: { key: string; value: unknown }) {
     </section>
     <section v-if="tab === 'datasource'">
       <h2>数据源接入</h2>
-      <form class="row" @submit.prevent="addDatasource">
-        <input v-model="dsForm.name" placeholder="名称" required />
-        <input v-model="dsForm.host" placeholder="主机" required />
-        <input v-model.number="dsForm.port" type="number" placeholder="端口" />
-        <input v-model="dsForm.db_name" placeholder="库名" required />
-        <input v-model="dsForm.readonly_user" placeholder="只读账号" required />
-        <input v-model="dsForm.password" type="password" placeholder="密码" required />
-        <button type="submit">接入并测试</button>
-      </form>
-      <ul>
-        <li v-for="d in dss" :key="d.id">
-          {{ d.name }}（{{ d.host }}/{{ d.db_name }}）
-          <button @click="selectedDs = d.id; scan(); tab = 'schema'">扫描表结构</button>
-        </li>
-      </ul>
+      <el-form class="ds-form" :model="dsForm" inline @submit.prevent="addDatasource">
+        <el-form-item required><el-input v-model="dsForm.name" placeholder="名称" style="width: 130px" /></el-form-item>
+        <el-form-item required><el-input v-model="dsForm.host" placeholder="主机" style="width: 140px" /></el-form-item>
+        <el-form-item><el-input-number v-model="dsForm.port" placeholder="端口" :min="1" :max="65535" style="width: 130px" /></el-form-item>
+        <el-form-item required><el-input v-model="dsForm.db_name" placeholder="库名" style="width: 150px" /></el-form-item>
+        <el-form-item required><el-input v-model="dsForm.readonly_user" placeholder="只读账号" style="width: 130px" /></el-form-item>
+        <el-form-item required><el-input v-model="dsForm.password" type="password" placeholder="密码" show-password style="width: 150px" /></el-form-item>
+        <el-form-item>
+          <el-button type="primary" native-type="submit" :loading="scanning">接入并测试</el-button>
+        </el-form-item>
+      </el-form>
+      <el-table :data="dss" size="small" stripe>
+        <el-table-column prop="name" label="名称" width="160" />
+        <el-table-column prop="host" label="主机" min-width="140" />
+        <el-table-column prop="db_name" label="库名" min-width="140" />
+        <el-table-column label="操作" width="140">
+          <template #default="{ row }">
+            <el-button size="small" type="primary" plain
+                       @click="selectedDs = row.id; scan(); tab = 'schema'">扫描表结构</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
     </section>
 
     <!-- 表标注 -->
@@ -379,11 +394,11 @@ async function saveConfig(c: { key: string; value: unknown }) {
         <tbody>
           <tr v-for="t in tables" :key="t.id">
             <td>{{ t.table_name }}</td>
-            <td><input v-model="t.cn_name" /></td>
+            <td><el-input v-model="t.cn_name" size="small" placeholder="中文名" /></td>
             <td>{{ t.annotation_score }}%</td>
             <td>
-              <input type="checkbox" :checked="t.included" @change="saveAnnotation(t)" />
-              <button @click="pickTable(t.id)">字段</button>
+              <el-switch :model-value="t.included" @change="saveAnnotation(t)" />
+              <el-button size="small" @click="pickTable(t.id)">字段</el-button>
             </td>
           </tr>
         </tbody>

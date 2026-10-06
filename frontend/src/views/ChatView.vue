@@ -1,6 +1,18 @@
 <script setup lang="ts">
 // 主对话界面（UX-01）：左侧会话列表 + 右侧对话流；SSE 流式（FR-UI-05）—— Element Plus 版
-import * as echarts from 'echarts'
+// echarts 按需注册（体积优化：全量 ~1MB → 按需 ~400KB）
+import * as echarts from 'echarts/core'
+import { LineChart, BarChart, PieChart } from 'echarts/charts'
+import {
+  GridComponent, TooltipComponent, TitleComponent, LegendComponent,
+} from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+
+echarts.use([
+  LineChart, BarChart, PieChart,
+  GridComponent, TooltipComponent, TitleComponent, LegendComponent,
+  CanvasRenderer,
+])
 import { ElMessage } from 'element-plus'
 import { nextTick, onMounted, ref } from 'vue'
 import {
@@ -143,7 +155,7 @@ function retryLast(msg: ChatMessage) {
 function renderChart(el: HTMLElement, msg: ChatMessage) {
   if (msg.chartType && msg.chartOption && msg.chartType !== 'empty' && msg.chartType !== 'table') {
     const chart = echarts.init(el)
-    chart.setOption(msg.chartOption as echarts.EChartsOption)
+    chart.setOption(msg.chartOption as echarts.EChartsCoreOption)
   }
 }
 

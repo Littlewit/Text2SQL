@@ -1,110 +1,178 @@
-# Text2SQL Backend
+<div align="center">
 
-FastAPI 异步后端：自然语言 → 安全 SQL → 脱敏结果 → 图表配置的完整链路，
-以及认证、权限、运营看板与评测管理。
+# Text2SQL 智能数据分析平台
 
-## 技术栈
+**用自然语言查询数据库，即刻生成图表与结论**
 
-| 层 | 选型 |
+[![CI](https://github.com/Littlewit/Text2SQL/actions/workflows/ci.yml/badge.svg)](https://github.com/Littlewit/Text2SQL/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-async-009688?logo=fastapi&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%20%2B%20pgvector-4169E1?logo=postgresql&logoColor=white)
+![Vue](https://img.shields.io/badge/Vue-3.x%20%2B%20Element%20Plus-4FC08D?logo=vuedotjs&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker%20Compose-ready-2496ED?logo=docker&logoColor=white)
+![Eval](https://img.shields.io/badge/%E8%AF%84%E6%B5%8B%E5%9F%BA%E7%BA%BF-231%E6%9D%A1%20%C2%B7%2097.4%25-brightgreen)
+
+</div>
+
+---
+
+## 项目简介
+
+面向非技术人员的智能数据分析平台：业务人员用中文提问（如「上个月哪个店铺 GMV 最高？」），
+平台自动完成 **意图理解 → Schema 混合检索 → SQL 生成 → AST 安全校验 → 权限改写 → 只读执行 → 脱敏 → 图表渲染**
+的完整链路，并以「结论 + 图表 + SQL 解释 + 口径声明」四要素呈现结果。
+
+### 核心特性
+
+- **对话式查询** — 多轮上下文继承、建议追问、流式阶段反馈（SSE）
+- **Text2SQL 引擎** — DeepSeek Flash + Few-shot 动态召回 + 指标口径归一化 + Schema 混合检索（pgvector，表配额保底 + 聚合加分）
+- **纵深防御** — AST 级 SQL 校验白名单、行级权限注入（union/intersect 可配）、列级角色隐藏、敏感字段脱敏、只读账号、QPS/并发限流、每日配额、熔断
+- **运营闭环** — 运营看板（成功率/耗时分布/重试率/Token 用量）、查询历史/收藏/分享、Few-shot 样例库与反馈采纳、审计日志（不可篡改 + 保留期清理）
+- **质量门禁** — 231 条评测基线（安全/召回 100%）、回归对比报告、覆盖率 ≥70%
+- **同构部署** — 全环境统一 PostgreSQL + pgvector（含向量检索），Docker Compose 一键启动
+
+### 评测基线（M3-T1）
+
+| 维度 | 通过率 |
 |---|---|
-| Web 框架 | FastAPI（异步，SSE 流式） |
-| ORM / 迁移 | SQLAlchemy 2.0 (async) + Alembic |
-| 数据库 | PostgreSQL 16 + pgvector（元数据库与向量检索同库） |
-| 缓存 / 计数 | Redis（限流、每日配额；不可用自动降级内存后端） |
-| LLM | DeepSeek Flash（OpenAI 兼容协议，`app/llm/` 适配层可替换） |
-| SQL 校验 | sqlglot AST 白名单（`app/services/sql_guard/`） |
-| 评测 | 自研 eval 框架（231 条用例，`eval/`） |
-| 观测 | Prometheus `/metrics`、trace_id 中间件、结构化日志 |
+| 安全拦截（写库/危险函数/注入/系统表） | 100% |
+| 表召回（top-10 全命中） | 100% |
+| 越界拒答 / 时间解析 | 100% |
+| **执行结果一致（EX）** | **95%+** |
+| 意图识别 | 88% |
+| **整体** | **97.4%**（231 条，真实 LLM） |
 
-## 目录结构
+## 架构
+
+```mermaid
+flowchart LR
+    FE[Vue3 + Element Plus + ECharts] --> API[FastAPI 网关]
+    API --> RL[限流 / 每日配额]
+    API --> NLU[意图与实体理解]
+    API --> SR[Schema 混合检索]
+    SR --> PGV[(pgvector)]
+    NLU --> GEN[SQL 生成]
+    GEN --> LLM[DeepSeek Flash]
+    GEN --> GUARD[SQL 校验 / 权限改写 / 脱敏]
+    GUARD --> EXE[只读执行器]
+    EXE --> BIZ[(业务库 PostgreSQL)]
+    API --> META[(元数据库 PostgreSQL)]
+    API --> RC[Redis 限流/配额]
+    API --> DASH[运营看板 / 评测管理]
+```
+
+## 快速开始
+
+> 前置条件：[Docker](https://docs.docker.com/desktop/)（数据库必须走容器）、Python 3.10+、Node 18+
+
+```bash
+# 1. 克隆
+git clone https://github.com/Littlewit/Text2SQL.git
+cd Text2SQL
+
+# 2. 启动基础设施（PostgreSQL pgvector + Redis；PG 映射宿主机 5433）
+docker compose -f docker-compose.dev.yml up -d
+
+# 3. 后端依赖与迁移
+cd backend
+python -m venv .venv
+.venv\Scripts\activate
+pip install -e ".[dev]"
+copy .env.example .env
+alembic upgrade head
+
+# 4. 示例业务库与语义层种子（评测/演示数据）
+psql -h localhost -p 5433 -U t2s -d postgres -c "CREATE DATABASE demo_business"
+psql -h localhost -p 5433 -U t2s -d demo_business -f scripts/demo_business.sql
+# 在管理后台接入数据源 demo_business 并完成扫描后：
+python scripts/seed_eval_meta.py
+python scripts/seed_few_shots.py
+
+# 5. 启动后端（统一入口，处理 Windows 事件循环兼容）
+python run.py
+
+# 6. 前端（另开终端）
+cd ../frontend
+npm install
+npm run dev
+```
+
+后端 API 位于 `http://localhost:8000/api/v1`，交互式文档见 `/docs`。
+内置账号：`admin / admin123`（首启强制修改）。内置角色：`R-BIZ` 业务用户、`R-DA` 数据分析、`R-AD` 管理员、`R-AU` 审计员。
+
+## 项目结构
 
 ```text
-app/
-├── api/v1/          # 路由：auth、query(SSE)、extras(分享/收藏/导出)、admin/*(用户/数据源/配置/审计/标注/语义层/运营)
-├── core/            # config(Pydantic Settings)、security(JWT/argon2)、credential(AES-GCM)、
-│                    # rate_limit(QPS/并发)、quota(每日配额)、result_cache、deps、obs、errors
-├── services/        # nlu(意图/时间解析)、schema_retrieval(混合检索)、prompt、sql_gen、
-│                    # sql_guard、permission(行级改写)、masking、executor、visualization、
-│                    # dashboard、cleanup、eval_service、audit
-├── infra/           # ORM 模型（11 张业务表）与异步引擎
-├── llm/             # LLM 客户端（熔断）与 Embedding（Hash/真模型）
-└── workers/         # Celery 任务骨架（向量化）
-eval/                # 评测框架：cases_v1.json(231 条)、runner、ex_utils、baseline.json
-alembic/             # 迁移 0001~0010
-scripts/             # demo_business.sql（示例库）、seed_eval_meta.py、seed_few_shots.py
-tests/               # 单元（无外部依赖）+ 集成（真实 PG）
+├── backend/                  # FastAPI 后端（见 backend/README.md）
+│   ├── app/api/v1/           #   路由层（认证/查询 SSE/管理后台/运营）
+│   ├── app/core/             #   配置/安全/限流/配额/结果缓存
+│   ├── app/services/         #   NLU、检索、生成、sql_guard、权限、脱敏、执行、图表、评测
+│   ├── app/infra/            #   ORM 模型与数据库引擎
+│   ├── app/llm/              #   LLM / Embedding 适配层（可替换）
+│   ├── alembic/              #   迁移（0001~0010，仅 PostgreSQL 方言）
+│   ├── eval/                 #   评测框架（231 条用例、runner、基线）
+│   ├── scripts/              #   示例库/语义层/Few-shot 种子脚本
+│   └── tests/                #   单元 + 集成测试（真实 PG）
+├── frontend/                 # Vue3 + Element Plus 前端（见 frontend/README.md）
+├── docker-compose.dev.yml    # 开发环境编排
+├── docker-compose.yml        # 生产编排
+└── .github/workflows/        # CI 流水线（lint/测试/覆盖率门禁）
 ```
 
-## 环境变量
-
-完整清单见 `.env.example`，关键字段：
-
-| 变量 | 说明 |
-|---|---|
-| `DEEPSEEK_API_KEY` | LLM 密钥（优先），兼容 `LLM_API_KEY`；未配置时走 FakeLLM 替身 |
-| `METADATA_DB_URL` | 元数据库连接串（默认 `localhost:5433/text2sql_meta`） |
-| `SECRET_KEY` | JWT 签名密钥，生产必须覆盖 |
-| `EMBEDDING_MODEL` / `EMBEDDING_DIM` | Embedding 模型与维度（默认 1024） |
-
-## 进入环境
+## 开发
 
 ```bash
+# 后端测试与检查
 cd backend
-
-# Windows（PowerShell）
-python -m venv .venv
-.venv\Scripts\activate          # 激活后命令行前缀出现 (.venv)
-
-# Linux / macOS
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-- 激活后 `python` / `pip` 即指向虚拟环境，无需再写 `.venv\Scripts\python`；
-- 退出虚拟环境：`deactivate`；
-- 依赖安装与所有命令（alembic / pytest / eval 等）均在**激活状态**下执行；
-- IDE（VS Code / PyCharm）选择解释器为 `backend/.venv` 即可自动激活。
-
-> 不激活也可以用完整路径调用：`.venv\Scripts\python -m pytest ...`（Windows）或
-> `.venv/bin/python -m pytest ...`（Linux），效果等价。
-
-## 启动
-
-```bash
-# （进入虚拟环境后）
-pip install -e ".[dev]"
-alembic upgrade head      # 迁移（首次自动启用 pgvector）
-python run.py             # 统一入口（Windows 事件循环兼容处理）
-```
-
-- API 前缀 `/api/v1`，交互式文档 `/docs`（`DEBUG=false` 时关闭）
-- 健康探针：`/api/v1/healthz`（存活）、`/api/v1/readyz`（依赖 DB 可达）
-- Prometheus 指标：`/metrics`
-
-## 测试与质量门禁
-
-```bash
-pytest -m "not integration"                    # 单元测试（80 条，无外部依赖）
-pytest -m integration                          # 集成测试（57 条，需 Docker 真实 PG）
+pytest -m "not integration"                    # 单元测试（无外部依赖）
+pytest -m integration                          # 集成测试（需 Docker，真实 PG + pgvector）
 pytest -m "not integration" --cov=app --cov-append
 pytest -m integration --cov=app --cov-append --cov-fail-under=70   # 覆盖率门禁（实测 75.7%）
 ruff check .
+
+# 评测（真实 LLM，需 DEEPSEEK_API_KEY）
+python -m eval.run --offline                   # 离线安全类别（CI 门禁，100% 红线）
+python -m eval.run                             # 全量（与 baseline.json 对比）
+python -m eval.run --kinds sql_exec,recall     # 指定类别
+
+# 前端
+cd frontend
+npm run dev
+npm run build
 ```
 
-## 评测
+## 文档
 
-```bash
-python -m eval.run --offline              # 离线安全类别（CI 红线 100%）
-python -m eval.run                        # 全量 231 条（真实 LLM，与 baseline.json 对比）
-python -m eval.run --kinds sql_exec,recall
-python -m eval.run --gate                 # 全量跑通后写入新基线
-```
+完整产品与技术文档存放于本地 `.codebuddy/docs/`、任务计划于 `.codebuddy/plans/`（不入库）：
 
-当前基线 **97.4%**（安全/召回/拒答/时间解析 100%，EX 95%+，意图 88%）。
+| 文档 | 说明 |
+|---|---|
+| 详细需求文档 v1.1 | 8 大模块、130 条功能需求、非功能指标与验收标准 |
+| 系统设计 v1.0 | 架构、核心链路、数据库 DDL、API 契约、部署设计 |
+| M1/M2 任务计划 | T0~T6、M2-T1~T6 任务包拆解与完成记录 |
+| M3 任务计划 | 质量冲刺 / 对话深化 / 生产就绪（进行中） |
 
-## 关键设计约定
+## Roadmap
 
-- **零信任 LLM**：生成 SQL 必过 AST 白名单 → 行级权限改写 → 复验 → 只读执行 → 服务端统一脱敏；
-- **CMP-02 红线**：Prompt 只含 Schema 元数据/指标口径/样例 SQL/问题文本，禁止真实数据行；
-- **响应包络**：统一 `{code, message, data}`，业务错误码见 `app/core/errors.py`；
-- **种子脚本幂等**：重复执行不产生重复数据；数据源须先在管理后台接入并扫描。
+- [x] **M1** — 脚手架 / 认证底座 / Schema 管理链路 / 查询主链路 / 可视化 / 示例库与安全评测
+- [x] **M2** — 数据闭环 / SQL 增强 / 权限精细化 / 可视化导出 / 运营看板 / 评测基线（89.2%）
+- [x] **M3-T1** — 生成质量冲刺（评测基线 97.4%，EX 95%+）
+- [ ] M3-T2 — Embedding 真模型接入（bge-large-zh）
+- [ ] M3-T3 — 对话式分析深化（多轮改写 / 对比问题）
+- [ ] M3-T4 — Celery 异步任务与性能
+- [ ] M3-T5 — 生产化部署（一键初始化 / 备份 / 监控）
+- [ ] M3-T6 — UAT 与交付验收
+
+## 安全说明
+
+平台对业务数据库**严格只读**；LLM 输出零信任，所有 SQL 必须通过 AST 白名单校验、
+权限改写与行数限制后方可执行；敏感值在服务端出口统一脱敏后才进入前端与导出；
+密钥仅经环境变量注入（`DEEPSEEK_API_KEY`），数据源凭据 AES-GCM 加密存储。详见需求文档 §9 安全与合规。
+
+---
+
+<div align="center">
+
+Built with FastAPI · SQLAlchemy 2.0 · pgvector · Vue3 · Element Plus · ECharts
+
+</div>
