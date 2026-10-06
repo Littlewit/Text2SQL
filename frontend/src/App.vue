@@ -17,7 +17,7 @@ function toggleTheme() {
 <template>
   <el-config-provider :locale="zhCn">
     <router-view />
-    <!-- 暗色/亮色切换：全局悬浮 -->
+    <!-- 暗色/亮色切换：全局右上角 -->
     <el-button class="theme-toggle" :icon="dark ? Sunny : Moon" circle
                :title="dark ? '切换亮色' : '切换暗色'" @click="toggleTheme" />
   </el-config-provider>
@@ -61,7 +61,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 a { text-decoration: none; color: var(--el-color-primary); }
-.theme-toggle { position: fixed; right: 1rem; bottom: 1rem; z-index: 99; }
+.theme-toggle { position: fixed; top: 1rem; right: 1rem; z-index: 99; }
 
 /* ===== Shared page header pattern (history / favorites / admin) ===== */
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.2rem; }
