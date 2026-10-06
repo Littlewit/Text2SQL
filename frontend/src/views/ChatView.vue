@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // 主对话界面（UX-01）：左侧会话列表 + 右侧对话流；SSE 流式（FR-UI-05）—— Element Plus 版
 // echarts 按需注册（体积优化：全量 ~1MB → 按需 ~400KB）
+import { Promotion } from '@element-plus/icons-vue'
 import * as echarts from 'echarts/core'
 import { LineChart, BarChart, PieChart } from 'echarts/charts'
 import {
@@ -234,12 +235,6 @@ function doLogout() {
           {{ c.title || '会话 ' + c.id }}
         </div>
       </el-scrollbar>
-      <div class="ds-picker" v-if="datasources.length">
-        <span>数据源</span>
-        <el-select v-model="datasourceId" size="small" placeholder="选择数据源">
-          <el-option v-for="d in datasources" :key="d.id" :label="d.name" :value="d.id" />
-        </el-select>
-      </div>
     </aside>
 
     <!-- 右侧对话流 -->
@@ -326,12 +321,23 @@ function doLogout() {
       </div>
     </main>
 
-    <!-- 输入区 -->
+    <!-- 输入区（豆包风格：自适应多行 + 内嵌工具栏 + 圆形发送键） -->
     <footer class="input-bar">
       <div class="input-shell">
-        <el-input v-model="input" :disabled="busy" size="large" clearable
-                  placeholder="用自然语言提问，例如：上个月哪个店铺GMV最高？" @keydown.enter="send()" />
-        <el-button type="primary" size="large" :disabled="busy" @click="send()">发送</el-button>
+        <el-input
+          v-model="input" type="textarea" :autosize="{ minRows: 1, maxRows: 6 }" resize="none"
+          placeholder="用自然语言提问，Enter 发送，Shift+Enter 换行"
+          class="chat-textarea" @keydown.enter.exact.prevent="send()" />
+        <div class="input-tools">
+          <div class="tools-left">
+            <el-select v-if="datasources.length" v-model="datasourceId" size="small"
+                       class="ds-inline" placeholder="数据源">
+              <el-option v-for="d in datasources" :key="d.id" :label="d.name" :value="d.id" />
+            </el-select>
+          </div>
+          <el-button class="send-btn" type="primary" :icon="Promotion" circle
+                     :disabled="busy || !input.trim()" :loading="busy" @click="send()" />
+        </div>
       </div>
     </footer>
   </div>
@@ -362,8 +368,6 @@ function doLogout() {
 .conv-item.active { background: var(--el-color-primary-light-9); color: var(--el-color-primary); font-weight: 600; }
 .conv-item.active::before { content: ''; position: absolute; left: 0; top: 20%; bottom: 20%;
   width: 3px; border-radius: 2px; background: var(--el-color-primary); }
-.ds-picker { font-size: .8rem; margin-top: 1rem; display: flex; flex-direction: column; gap: .3rem;
-  color: var(--el-text-color-secondary); }
 
 /* ---- Chat main ---- */
 .chat-main { overflow-y: auto; padding: 1.6rem 2rem; background: var(--el-bg-color-page); }
@@ -393,15 +397,20 @@ function doLogout() {
 .sql-pre { background: var(--el-fill-color-light); padding: .8rem; border-radius: 8px;
   overflow-x: auto; margin: 0; font-size: .82rem; }
 
-/* ---- Input bar (floating shell) ---- */
-.input-bar { padding: .9rem 2rem 1.2rem; border-top: 1px solid var(--el-border-color-lighter);
-  background: var(--el-bg-color); }
-.input-shell { display: flex; gap: .6rem; max-width: 860px; margin: 0 auto;
-  padding: .35rem .35rem .35rem .6rem; border: 1px solid var(--el-border-color);
-  border-radius: 14px; background: var(--el-bg-color); box-shadow: 0 2px 12px rgb(16 24 40 / 6%);
-  transition: box-shadow .2s, border-color .2s; }
+/* ---- Input bar (Doubao-style: floating card, autosize textarea, inline tools) ---- */
+.input-bar { padding: .9rem 2rem 1.3rem; background: var(--el-bg-color-page); }
+.input-shell { max-width: 860px; margin: 0 auto; padding: .7rem .7rem .5rem .9rem;
+  border: 1px solid var(--el-border-color); border-radius: 22px; background: var(--el-bg-color);
+  box-shadow: 0 4px 20px rgb(16 24 40 / 7%); transition: border-color .2s, box-shadow .2s; }
 .input-shell:focus-within { border-color: var(--el-color-primary);
-  box-shadow: 0 4px 18px rgb(76 110 245 / 18%); }
-.input-shell .el-input { flex: 1; }
-.input-shell .el-input__wrapper { box-shadow: none !important; background: transparent; }
+  box-shadow: 0 6px 24px rgb(76 110 245 / 16%); }
+.chat-textarea textarea { background: transparent; }
+.chat-textarea .el-textarea__inner { box-shadow: none !important; padding: .2rem .2rem;
+  font-size: .95rem; line-height: 1.55; background: transparent; }
+.input-tools { display: flex; justify-content: space-between; align-items: center; margin-top: .35rem; }
+.tools-left { display: flex; gap: .5rem; align-items: center; }
+.ds-inline { width: 170px; }
+.ds-inline .el-select__wrapper { border-radius: 16px; background: var(--el-fill-color-light);
+  box-shadow: none !important; min-height: 30px; }
+.send-btn { width: 38px; height: 38px; font-size: 1rem; }
 </style>
