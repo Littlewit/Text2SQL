@@ -334,11 +334,8 @@ function doLogout() {
           v-model="input" type="textarea" :autosize="{ minRows: 1, maxRows: 6 }" resize="none"
           placeholder="用自然语言提问，Enter 发送，Shift+Enter 换行"
           class="chat-textarea" @keydown.enter.exact.prevent="send()" />
-        <div class="input-tools">
-          <div class="tools-left"></div>
-          <el-button class="send-btn" type="primary" :icon="Promotion" circle
-                     :disabled="busy || !input.trim()" :loading="busy" @click="send()" />
-        </div>
+        <el-button class="send-btn" type="primary" :icon="Promotion" circle
+                   :disabled="busy || !input.trim()" :loading="busy" @click="send()" />
       </div>
     </footer>
   </div>
@@ -402,14 +399,14 @@ function doLogout() {
 
 /* ---- Input bar (Doubao-style: floating card, autosize textarea, inline tools) ---- */
 .input-bar { padding: .9rem 2rem 1.3rem; background: var(--el-bg-color-page); }
-.input-shell { max-width: 860px; margin: 0 auto; padding: .7rem .7rem .5rem .9rem;
-  border: 1px solid var(--el-border-color); border-radius: 22px; background: var(--el-bg-color);
+.input-shell { display: flex; align-items: flex-end; gap: .5rem; max-width: 860px; margin: 0 auto;
+  padding: .45rem .5rem .45rem .9rem; border: 1px solid var(--el-border-color);
+  border-radius: 22px; background: var(--el-bg-color);
   box-shadow: 0 4px 20px rgb(16 24 40 / 7%); transition: border-color .2s, box-shadow .2s; }
 .input-shell:focus-within { border-color: var(--el-color-primary);
   box-shadow: 0 6px 24px rgb(76 110 245 / 16%); }
-.chat-textarea textarea { background: transparent; }
-.chat-textarea .el-textarea__inner { box-shadow: none !important; padding: .2rem .2rem;
+.chat-textarea { flex: 1; }
+.chat-textarea .el-textarea__inner { box-shadow: none !important; padding: .3rem 0;
   font-size: .95rem; line-height: 1.55; background: transparent; }
-.input-tools { display: flex; justify-content: flex-end; align-items: center; margin-top: .35rem; }
-.send-btn { width: 38px; height: 38px; font-size: 1rem; }
+.send-btn { flex-shrink: 0; width: 38px; height: 38px; font-size: 1rem; margin-bottom: 1px; }
 </style>
