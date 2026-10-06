@@ -407,14 +407,15 @@ function doLogout() {
   box-shadow: 0 4px 20px rgb(16 24 40 / 7%); transition: box-shadow .25s, background .25s; }
 .input-shell:hover { box-shadow: 0 6px 24px rgb(16 24 40 / 10%); }
 .input-shell:focus-within {
-  background:
-    linear-gradient(var(--el-bg-color), var(--el-bg-color)) padding-box,
-    var(--t2s-grad) border-box;
-  box-shadow: 0 6px 26px rgb(76 110 245 / 20%); }
+  box-shadow: 0 6px 24px rgb(16 24 40 / 12%); }
 .chat-textarea { flex: 1; }
-.chat-textarea .el-textarea__inner { box-shadow: none !important; border: none !important;
+/* :deep 穿透 scoped 作用域，确保命中 Element Plus 内部 textarea（去边框/阴影） */
+.chat-textarea :deep(.el-textarea__inner) {
+  box-shadow: none !important; border: none !important; outline: none !important;
   padding: .45rem 0; font-size: .95rem; line-height: 1.55; background: transparent;
   caret-color: var(--el-color-primary); }
+.chat-textarea :deep(.el-textarea__inner:focus) {
+  box-shadow: none !important; border: none !important; }
 .chat-textarea textarea::placeholder { color: var(--el-text-color-placeholder); }
 .send-btn { flex-shrink: 0; width: 30px; height: 30px; font-size: .85rem; margin-bottom: 4px;
   border: none; background: var(--t2s-grad); transition: transform .18s, box-shadow .18s, filter .18s; }
